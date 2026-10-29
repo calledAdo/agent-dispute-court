@@ -1,0 +1,292 @@
+{
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "contract IMIP20Hold",
+          "name": "token_",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "court_",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxRefund_",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint64",
+          "name": "objectionWindow_",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "paymentTx",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        }
+      ],
+      "name": "Objected",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "paymentTx",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "refund",
+          "type": "uint256"
+        }
+      ],
+      "name": "RefundPaid",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "paymentTx",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "refund",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "reasonCode",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "evidenceRoot",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "executableAt",
+          "type": "uint64"
+        }
+      ],
+      "name": "RulingPublished",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "court",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "paymentTx",
+          "type": "bytes32"
+        }
+      ],
+      "name": "execute",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "maxRefund",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "paymentTx",
+          "type": "bytes32"
+        }
+      ],
+      "name": "object",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "objectionWindow",
+      "outputs": [
+        {
+          "internalType": "uint64",
+          "name": "",
+          "type": "uint64"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "reserve",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "paymentTx",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "refund",
+          "type": "uint256"
+        },
+        {
+          "internalType": "string",
+          "name": "reasonCode",
+          "type": "string"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "evidenceRoot",
+          "type": "bytes32"
+        }
+      ],
+      "name": "rule",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "name": "rulings",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "seller",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "payer",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "refund",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint64",
+          "name": "executableAt",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint8",
+          "name": "state",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "token",
+      "outputs": [
+        {
+          "internalType": "contract IMIP20Hold",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x610100604052348015610010575f5ffd5b50604051610a89380380610a8983398101604081905261002f91610072565b6001600160a01b039384166080529190921660a05260c0919091526001600160401b031660e0526100cf565b6001600160a01b038116811461006f575f5ffd5b50565b5f5f5f5f60808587031215610085575f5ffd5b84516100908161005b565b60208601519094506100a18161005b565b6040860151606087015191945092506001600160401b03811681146100c4575f5ffd5b939692955090935050565b60805160a05160c05160e0516109656101245f395f8181610104015261045701525f818161014401526103f001525f81816098015261033c01525f818161023701528181610601015261072b01526109655ff3fe608060405234801561000f575f5ffd5b506004361061008f575f3560e01c80632353464c116100635780632353464c1461013f578063819b25ba14610174578063e751f27114610187578063e781fd781461019a578063fc0c546a14610232575f5ffd5b8062971a301461009357806305ad1456146100d75780630b7b3eb0146100ec57806319ba9046146100ff575b5f5ffd5b6100ba7f000000000000000000000000000000000000000000000000000000000000000081565b6040516001600160a01b0390911681526020015b60405180910390f35b6100ea6100e53660046107d3565b610259565b005b6100ea6100fa366004610805565b610331565b6101267f000000000000000000000000000000000000000000000000000000000000000081565b60405167ffffffffffffffff90911681526020016100ce565b6101667f000000000000000000000000000000000000000000000000000000000000000081565b6040519081526020016100ce565b6100ea6101823660046107d3565b6105e5565b6100ea6101953660046107d3565b610663565b6101f26101a83660046107d3565b5f6020819052908152604090208054600182015460028301546003909301546001600160a01b0392831693919092169167ffffffffffffffff81169060ff600160401b9091041685565b604080516001600160a01b0396871681529590941660208601529284019190915267ffffffffffffffff16606083015260ff16608082015260a0016100ce565b6100ba7f000000000000000000000000000000000000000000000000000000000000000081565b5f8181526020819052604090206003810154600160401b900460ff16600114801561028d575080546001600160a01b031633145b80156102a65750600381015467ffffffffffffffff1642105b6102e75760405162461bcd60e51b815260206004820152600d60248201526c18d85b9b9bdd081bd89a9958dd609a1b60448201526064015b60405180910390fd5b60038101805460ff60401b191668030000000000000000179055604051339083907f2dc768c60164cef769e551c30c50545e36258d9c11a9a362ec7cc77a901439a1905f90a35050565b336001600160a01b037f000000000000000000000000000000000000000000000000000000000000000016146103965760405162461bcd60e51b815260206004820152600a602482015269636f757274206f6e6c7960b01b60448201526064016102de565b5f87815260208190526040902060030154600160401b900460ff16156103ee5760405162461bcd60e51b815260206004820152600d60248201526c185b1c9958591e481c9d5b1959609a1b60448201526064016102de565b7f00000000000000000000000000000000000000000000000000000000000000008411156104515760405162461bcd60e51b815260206004820152601060248201526f0726566756e642061626f7665206361760841b60448201526064016102de565b5f61047c7f0000000000000000000000000000000000000000000000000000000000000000426108ae565b90506040518060a00160405280886001600160a01b03168152602001876001600160a01b031681526020018681526020018267ffffffffffffffff168152602001600160ff168152505f5f8a81526020019081526020015f205f820151815f015f6101000a8154816001600160a01b0302191690836001600160a01b031602179055506020820151816001015f6101000a8154816001600160a01b0302191690836001600160a01b03160217905550604082015181600201556060820151816003015f6101000a81548167ffffffffffffffff021916908367ffffffffffffffff16021790555060808201518160030160086101000a81548160ff021916908360ff160217905550905050856001600160a01b0316876001600160a01b0316897f34165953579ee0a4d6335af72a1010583961b3297f836449a02e1b20f68dd04b88888888886040516105d39594939291906108e0565b60405180910390a45050505050505050565b6040516346d8028760e01b8152336004820152602481018290527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b0316906346d80287906044015f604051808303815f87803b15801561064a575f5ffd5b505af115801561065c573d5f5f3e3d5ffd5b5050505050565b5f8181526020819052604090206003810154600160401b900460ff16600114801561069c5750600381015467ffffffffffffffff164210155b6106d95760405162461bcd60e51b815260206004820152600e60248201526d6e6f742065786563757461626c6560901b60448201526064016102de565b60038101805460ff60401b1916680200000000000000001790558054600182015460028301546040516329a6710160e11b81526001600160a01b039384166004820152918316602483015260448201527f00000000000000000000000000000000000000000000000000000000000000009091169063534ce202906064015f604051808303815f87803b15801561076e575f5ffd5b505af1158015610780573d5f5f3e3d5ffd5b50505050600181015460028201546040519081526001600160a01b039091169083907f96609d633b3c2732c0984962acf8fa747f81436a0ff8254822beffefe5b53c239060200160405180910390a35050565b5f602082840312156107e3575f5ffd5b5035919050565b80356001600160a01b0381168114610800575f5ffd5b919050565b5f5f5f5f5f5f5f60c0888a03121561081b575f5ffd5b8735965061082b602089016107ea565b9550610839604089016107ea565b945060608801359350608088013567ffffffffffffffff81111561085b575f5ffd5b8801601f81018a1361086b575f5ffd5b803567ffffffffffffffff811115610881575f5ffd5b8a6020828401011115610892575f5ffd5b979a9699509497939660209095019560a0909401359392505050565b67ffffffffffffffff81811683821601908111156108da57634e487b7160e01b5f52601160045260245ffd5b92915050565b85815260806020820152836080820152838560a08301375f60a085830101525f60a0601f19601f870116830101905083604083015267ffffffffffffffff83166060830152969550505050505056fea26469706673582212207d4b5555b90e381dc29898a57903a92cadb7b53a2edd469f6955d6fdf1f158f164736f6c634300081c0033"
+}
