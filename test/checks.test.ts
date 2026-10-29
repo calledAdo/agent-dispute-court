@@ -342,14 +342,58 @@ test("A13.3 cannot check without a reference price", () => {
   assert.equal(finding.reason, "reference_unavailable");
 });
 
-test("A13.3 cannot check when the quote symbol does not match the reference", () => {
+test("A13.3 confirms wrong_symbol when the quote is for another symbol", () => {
   const body = quoteBody(100, "2026-10-29T12:00:00.000Z", "AAPL");
   const finding = checkClaim(
     claimFor("A13.3"),
-    makeCtx({ sale: makeSale({ receipt: receiptFor(body) }) }),
+    makeCtx({ sale: makeSale({ receipt: receiptFor(body) }), reference: null }),
+  );
+  assert.equal(finding.state, "DIFFERENCE_CONFIRMED");
+  assert.equal(finding.reason, "wrong_symbol");
+});
+
+test("A13.3 compares the requested symbol case-insensitively", () => {
+  const sale = makeSale({ resource: "GET /quote?symbol=tsla" });
+  const finding = checkClaim(claimFor("A13.3"), makeCtx({ sale, history: [sale] }));
+  assert.equal(finding.state, "NO_DIFFERENCE_FOUND");
+});
+
+test("A13.3 cannot check when the request names no symbol", () => {
+  const sale = makeSale({ resource: "GET /quote" });
+  const finding = checkClaim(claimFor("A13.3"), makeCtx({ sale, history: [sale] }));
+  assert.equal(finding.state, "COULD_NOT_BE_CHECKED");
+  assert.equal(finding.reason, "requested_symbol_unknown");
+});
+
+test("A13.3 cannot check when the reference is for another symbol", () => {
+  const finding = checkClaim(
+    claimFor("A13.3"),
+    makeCtx({ reference: { symbol: "AAPL", price: 100, at: SETTLED_AT } }),
   );
   assert.equal(finding.state, "COULD_NOT_BE_CHECKED");
-  assert.equal(finding.reason, "symbol_mismatch");
+  assert.equal(finding.reason, "reference_symbol_mismatch");
+});
+
+test("A12 matches payers case-insensitively", () => {
+  const checksummed = "0xAbCdEf1111111111111111111111111111111111111111111111111111111111";
+  const sale = makeSale({ payer: checksummed.toLowerCase() as `0x${string}` });
+  const earlier = makeSale({
+    tx: TX_EARLIER,
+    payer: checksummed,
+    settledAt: SETTLED_AT - 30_000,
+  });
+  const finding = checkClaim(claimFor("A12"), makeCtx({ sale, history: [sale, earlier] }));
+  assert.equal(finding.state, "DIFFERENCE_CONFIRMED");
+});
+
+test("A14 matches payees case-insensitively", () => {
+  const checksummed = "0xAbCdEf2222222222222222222222222222222222222222222222222222222222";
+  const sale = makeSale({ payee: checksummed.toLowerCase() as `0x${string}` });
+  const finding = checkClaim(
+    claimFor("A14"),
+    makeCtx({ sale, history: [sale], expectedPayee: checksummed }),
+  );
+  assert.equal(finding.state, "NO_DIFFERENCE_FOUND");
 });
 
 // A14: "Price/payee wasn't the usual one"

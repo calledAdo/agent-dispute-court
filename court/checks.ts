@@ -94,7 +94,7 @@ function checkA12(claim: Claim, sale: Sale, ctx: CheckContext): Finding {
   const duplicate = ctx.history.find(
     (entry) =>
       entry.tx !== sale.tx &&
-      entry.payer === sale.payer &&
+      sameAddress(entry.payer, sale.payer) &&
       entry.requestHash === sale.requestHash &&
       entry.settledAt < sale.settledAt &&
       sale.settledAt - entry.settledAt <= ctx.duplicateWindowMs,
@@ -138,6 +138,20 @@ function checkA13_1(claim: Claim, sale: Sale): Finding {
   return finding(claim, "NO_DIFFERENCE_FOUND", "delivery_verified", evidence);
 }
 
+function sameAddress(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+/** Lowercased `symbol` query parameter of the signed resource, or null if absent/empty. */
+function requestedSymbol(resource: string): string | null {
+  const q = resource.indexOf("?");
+  if (q === -1) return null;
+  const end = resource.indexOf("#", q);
+  const params = new URLSearchParams(resource.slice(q + 1, end === -1 ? undefined : end));
+  const symbol = params.get("symbol");
+  return symbol === null || symbol === "" ? null : symbol.toLowerCase();
+}
+
 interface Quote {
   symbol: string;
   price: number;
@@ -163,14 +177,24 @@ function checkA13_3(claim: Claim, sale: Sale, ctx: CheckContext): Finding {
     return finding(claim, "COULD_NOT_BE_CHECKED", "body_unparseable", evidence);
   }
 
+  const requested = requestedSymbol(sale.resource);
+  if (requested === null) {
+    return finding(claim, "COULD_NOT_BE_CHECKED", "requested_symbol_unknown", evidence);
+  }
+
+  // Needs no reference: the signed request names one symbol and the body another.
+  if (quote.symbol.toLowerCase() !== requested) {
+    return finding(claim, "DIFFERENCE_CONFIRMED", "wrong_symbol", evidence);
+  }
+
   const { reference } = ctx;
   if (reference === null) {
     return finding(claim, "COULD_NOT_BE_CHECKED", "reference_unavailable", evidence);
   }
   evidence.push(`reference:${reference.symbol}`);
 
-  if (quote.symbol !== reference.symbol) {
-    return finding(claim, "COULD_NOT_BE_CHECKED", "symbol_mismatch", evidence);
+  if (reference.symbol.toLowerCase() !== requested) {
+    return finding(claim, "COULD_NOT_BE_CHECKED", "reference_symbol_mismatch", evidence);
   }
 
   if (!Number.isFinite(reference.price) || reference.price <= 0) {
@@ -224,7 +248,7 @@ function checkA14(claim: Claim, sale: Sale, ctx: CheckContext): Finding {
   }
 
   const amountMatches = sale.amount === ctx.priceList[route];
-  const payeeMatches = sale.payee === ctx.expectedPayee;
+  const payeeMatches = sameAddress(sale.payee, ctx.expectedPayee);
 
   if (!amountMatches && !payeeMatches) {
     return finding(claim, "DIFFERENCE_CONFIRMED", "amount_and_payee_mismatch", [sale.tx]);
