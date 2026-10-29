@@ -11,7 +11,7 @@ export interface Ruling {
   verdict: Verdict;
   liable: Liable;
   refund: bigint;
-  /** What would be paid if approved: sale.amount for a confirmed-but-escalated claim, else refund. */
+  /** What would be paid if approved: sale.amount on any escalation with a sale, refund on REFUND, else 0. For any ESCALATE with a sale it is the amount at stake. */
   proposedRefund: bigint;
   reason: string;
   evidence: string[];
@@ -103,7 +103,7 @@ export function decide(
     verdict: "ESCALATE",
     liable: "NONE",
     refund: 0n,
-    proposedRefund: 0n,
+    proposedRefund: sale.amount,
     reason: f.reason || "could_not_be_checked",
     decidedBy: "code",
   };
@@ -133,7 +133,7 @@ function decideFromJudgment(f: Finding, sale: Sale, policy: Policy, j: Judgment)
     verdict: "ESCALATE",
     liable: "NONE",
     refund: 0n,
-    proposedRefund: 0n,
+    proposedRefund: sale.amount,
     reason: `low_model_confidence: ${j.rationale}`,
     decidedBy: "model",
   };

@@ -1,0 +1,67 @@
+=== pay
+metal-agent pay <url> --network devnet|testnet [--key <file>] [--max <usdz>]
+                  [--method <method>] [--body <text>] [--header 'name: value']...
+metal-agent pay <url> --mandate <credential> --network devnet|testnet [--mandate-key-file <file>]
+
+Requests the URL and pays its x402 offer in *USDZ. With --key, the agent pays
+from its own key and refuses, before signing, any offer above --max (1 *USDZ
+by default). With --mandate, it pays from the owner's account within the
+mandate's limits, signed by the .key.json file in the credential's directory
+whose key the credential names, unless --mandate-key-file names another.
+--method (GET by default, POST with a --body), --body (application/json unless
+a --header names a content type) and each --header are sent again with the
+payment.
+=== mandate pull
+metal-agent mandate pull --credential <file> --to <address> --amount <usdz> --network devnet|testnet
+                  [--payment-id <id>] [--key <file>] [--mandate-key-file <file>] [--record-refusal]
+
+Pays an address the mandate allows, with no seller. The facilitator submits it
+and pays its gas, unless --key names a funded key to submit it. A payout the
+mandate would refuse is reported and not sent, and the command exits 1; with
+--key, --record-refusal sends it so the refusal is recorded on chain. The
+outcome is read from the chain: paid (exit 0), refused (exit 1), held in the
+payee's escrow (exit 4), or pending (exit 3); an error also exits 1. Each pull
+is kept under ~/.metal-agent/pulls, and running the same command again sends a
+pending pull again, which pays at most once. --payment-id names the payment,
+such as a refund's id: two payouts of one amount to one payee are two payments
+under two ids, an id whose payout was paid or held reports it again, and one
+the account refused may be sent with other values. Without it, a payout is
+=== mandate replace
+metal-agent mandate replace --credential <file> --replaces <file> --key <owner key file> --network devnet|testnet
+                  [--issuer <file>]... [--signer-key <file>]...
+
+Binds the credential in place of the mandate --replaces names, which is
+revoked in the same transaction. What was spent carries over into the new
+budget.
+=== mandate verify
+metal-agent mandate verify --credential <file> --issuer <file>... --network devnet|testnet [--tx <hash> [--signed-offer <text>]]
+
+Checks the mandate and every payment under it from the chain alone, or one
+--tx: the binding, the credential against it and under an --issuer you trust,
+and each payment as the mandate key's signed per-payment mandate. With
+--signed-offer, the order the agent signed for that payment, as pay printed
+it. A check that fails exits 1, as does an event under the mandate the SDK
+does not decode.
+=== mandate bind
+metal-agent mandate bind --credential <file> --key <owner key file> --network devnet|testnet [--issuer <file>]... [--signer-key <file>]...
+
+Binds the credential on the owner's account, which then pays under it. The
+account's owners sign: --key pays the gas and is the sole signer unless
+repeated --signer-key names the owners' keys. --issuer names the issuers whose
+credentials the owner accepts, the <key>.issuer.public.json beside the owner's
+key by default.
+=== mandate credential create
+metal-agent mandate credential create --principal <address> --cap <usdz> --budget <usdz> --out <file>
+                  --key <owner key file> | --issuer-key <file> --network devnet|testnet
+                  [--payee <address>[,<name>[,<website>]]]... [--expires-in <seconds>] [--starts-in <seconds>] [--max-occurrences <n>]
+                  [--description <text>] [--mandate-key-file <file>]
+
+Writes the limits an agent pays within into a credential file: the most per
+payment (--cap), the most in total over the mandate's whole life (--budget,
+which never resets), an expiry (--expires-in, 30 days by default), a start
+(--starts-in, by default 00:00 UTC on the day of issue) and, when --payee
+names any, the addresses it may pay, each with an optional name and website.
+Amounts are in *USDZ, to the cent. The mandate key the agent signs with is
+written beside the credential, mandate.key.json for --out mandate.json, unless
+--mandate-key-file names one that exists, as for a replacement. The keys that
+sign the credential are the owner's: they live beside the owner's key file,

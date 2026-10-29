@@ -343,3 +343,12 @@ test("secrets in errors never reach GET /cases/:id", async () => {
   } finally { await h.close(); }
   void n;
 });
+
+test("the complaint is stored on the case and returned by GET /cases/:id", async () => {
+  const h = await start([ruling("claim-1", TX1, "REFUND")]);
+  try {
+    const id = await file(h, { complaint: "price was wrong <b>x</b>", payer: PAYER, txs: [TX1] });
+    const c = await (await fetch(`${h.base}/cases/${id}`)).json() as { complaint: string };
+    assert.equal(c.complaint, "price was wrong <b>x</b>");
+  } finally { await h.close(); }
+});

@@ -62,7 +62,7 @@ const REFRESH_MARGIN_MS = 60_000;
 export class AirwallexClient {
   private clientId: string;
   private apiKey: string;
-  private baseUrl: string;
+  protected baseUrl: string;
   private filesUrl: string;
   private f: FetchFn;
   private now: () => number;
@@ -104,7 +104,7 @@ export class AirwallexClient {
   }
 
   // Sends a JSON request with bearer auth; retries on 429 with backoff ([T5] 10 req/s).
-  private async call(method: string, url: string, body?: unknown): Promise<any> {
+  protected async call(method: string, url: string, body?: unknown): Promise<any> {
     for (let attempt = 0; ; attempt++) {
       const res = await this.f(url, {
         method,
@@ -126,7 +126,7 @@ export class AirwallexClient {
 
   // The request_id is generated once per call and reused across 429 retries
   // because the body is built once.
-  private post(path: string, body: Record<string, unknown>, requestId?: string): Promise<any> {
+  protected post(path: string, body: Record<string, unknown>, requestId?: string): Promise<any> {
     return this.call("POST", `${this.baseUrl}${path}`, { request_id: requestId ?? crypto.randomUUID(), ...body });
   }
 
@@ -248,11 +248,11 @@ export class AirwallexClient {
   // =================== END SANDBOX-ONLY SIMULATION CALLS ===================
 }
 
-function enc(s: string): string {
+export function enc(s: string): string {
   return encodeURIComponent(s);
 }
 
-function defined(o: Record<string, unknown>): Record<string, unknown> {
+export function defined(o: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 }
 

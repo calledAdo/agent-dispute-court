@@ -134,10 +134,19 @@ test("proposedRefund shows the amount for escalated approvals", () => {
   assert.equal(ok.proposedRefund, 40n);
   const others = [
     decide(finding("A12", "NO_DIFFERENCE_FOUND"), sale(), policy),
-    decide(finding("A12", "COULD_NOT_BE_CHECKED"), sale(), policy),
-    decide(finding("A13.3", "COULD_NOT_BE_CHECKED"), sale(), policy, judg({ confidence: 0.1 })),
     decide(finding("A13.3", "COULD_NOT_BE_CHECKED"), sale(), policy, judg({ upheld: false })),
     decide(finding("A12", "DIFFERENCE_CONFIRMED"), null, policy),
   ];
   for (const r of others) assert.equal(r.proposedRefund, 0n);
+  const escalations = [
+    decide(finding("A12", "COULD_NOT_BE_CHECKED"), sale(), policy),
+    decide(finding("A13.3", "COULD_NOT_BE_CHECKED"), sale(), policy, judg({ confidence: 0.1 })),
+    decide(finding("A13.3", "COULD_NOT_BE_CHECKED"), sale(), policy,
+      { upheld: false, confidence: 0, rationale: "model_output_invalid", citedEvidence: [] }),
+  ];
+  for (const r of escalations) {
+    assert.equal(r.verdict, "ESCALATE");
+    assert.equal(r.refund, 0n);
+    assert.equal(r.proposedRefund, 40n);
+  }
 });

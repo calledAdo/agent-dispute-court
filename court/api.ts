@@ -1,6 +1,7 @@
 import express from "express";
 import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 import { x402HTTPResourceServer } from "@x402/core/server";
 import type { x402ResourceServer } from "@x402/core/server";
 import { paymentMiddlewareFromHTTPServer } from "@x402/express";
@@ -24,6 +25,7 @@ export interface Approval {
 export interface StoredCase extends CaseResult {
   status: CaseStatus;
   payer: string;
+  complaint: string;
   txs: string[];
   feeTx: string | null;
   feeRefundTx: string | null;
@@ -116,7 +118,7 @@ export function createCourtApp(deps: CourtAppDeps): Express {
   function startCase(input: CaseInput, feeTx: string | null): void {
     save({
       id: input.id, claims: [], findings: [], rulings: [], refundFee: false, summary: "", evidence: {},
-      status: "RUNNING", payer: input.payer, txs: [...input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
+      status: "RUNNING", payer: input.payer, complaint: input.complaint, txs: [...input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
       approvals: [], publishResults: null, executeResults: null, error: null, createdAt: now(),
     });
     // Asynchronous on purpose: the caller already has its 202.
@@ -140,7 +142,7 @@ export function createCourtApp(deps: CourtAppDeps): Express {
     // Someone else paid for this filing: keep the case on record but never run it.
     save({
       id: entry.input.id, claims: [], findings: [], rulings: [], refundFee: false, summary: "", evidence: {},
-      status: "FILER_MISMATCH", payer: entry.input.payer, txs: [...entry.input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
+      status: "FILER_MISMATCH", payer: entry.input.payer, complaint: entry.input.complaint, txs: [...entry.input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
       approvals: [], publishResults: null, executeResults: null,
       error: `settled payer ${settledPayer ?? "unknown"} does not match body payer`, createdAt: now(),
     });
@@ -148,6 +150,15 @@ export function createCourtApp(deps: CourtAppDeps): Express {
 
   const app = express();
   app.use(express.json({ limit: "256kb" }));
+
+  // ----- operator console (static) -----
+  const consoleDir = fileURLToPath(new URL("../console/", import.meta.url));
+  app.get("/", (_req, res) => void res.redirect(302, "/console/"));
+  app.use("/console", (_req, res, next) => {
+    res.setHeader("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    next();
+  }, express.static(consoleDir, { index: "index.html" }));
 
   app.get("/health", (_req, res) => void res.json({ ok: true }));
 
