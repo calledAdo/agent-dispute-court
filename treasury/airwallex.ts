@@ -1,14 +1,18 @@
 // Treasury calls on the Airwallex sandbox. Reuses the login, bearer and 429 retry of card/airwallex.ts.
 //
 // Sources: https://www.airwallex.com/docs/api (transactional_fx conversions create, payouts beneficiaries
-// schema/create, transfers create, simulation deposits create). Calls confirmed live: listGlobalAccounts, simulateDeposit, getBalances, fxQuote, fxConvert, beneficiarySchema; the rest is UNVERIFIED.
+// schema/create, transfers create, simulation deposits create). Calls confirmed live: listGlobalAccounts, simulateDeposit, getBalances, fxQuote, fxConvert, beneficiarySchema; beneficiaries and transfers confirmed live too (see below). Anything marked UNVERIFIED is not.
 import { AirwallexClient, defined, enc } from "../card/airwallex.ts";
 
 export type TransferMethod = "LOCAL" | "SWIFT";
-export type TransferStatus = "CREATED" | "SENT" | "PAID" | "FAILED" | "CANCELLED" | string; // UNVERIFIED enum
+export type TransferStatus = "CREATED" | "SENT" | "PAID" | "FAILED" | "CANCELLED" | string;
 
-/** EUR SWIFT costs a flat EUR 12.85 (guide). Kept in cents. */
-export const SWIFT_FEE_EUR_CENTS = 1285n;
+export interface BeneficiaryBody {
+  request_id?: string;
+  beneficiary: Record<string, unknown>;
+  transfer_methods: TransferMethod[];
+  nickname: string;
+}
 
 export class TreasuryAirwallexClient extends AirwallexClient {
   listGlobalAccounts(): Promise<any> {
@@ -46,36 +50,47 @@ export class TreasuryAirwallexClient extends AirwallexClient {
 
   // Confirmed live.
   beneficiarySchema(q: { bank_country_code: string; account_currency: string; transfer_method: TransferMethod }) {
-    return this.call("POST", `${this.baseUrl}/beneficiary_api_schemas/generate`, q);
+    return this.call("POST", `${this.baseUrl}/beneficiaries/schema`, q);
   }
 
-  createBeneficiary(beneficiary: Record<string, unknown>, requestId?: string) {
-    return this.post("/beneficiaries/create", { beneficiary }, requestId); // UNVERIFIED wrapper key
+  // Confirmed live: same body as create without request_id; answers "OK".
+  validateBeneficiary(body: BeneficiaryBody) {
+    return this.call("POST", `${this.baseUrl}/beneficiaries/validate`, body);
   }
 
-  // Guide: send transfer_currency / transfer_amount (not payment_*); amounts in major units.
-  createTransfer(a: { beneficiary_id: string; transfer_amount: number; transfer_currency: string; transfer_method: TransferMethod; reference: string; requestId?: string }) {
+  // Confirmed live (201). The response id is `id`.
+  createBeneficiary(body: BeneficiaryBody, requestId?: string) {
+    return this.post("/beneficiaries/create", body as unknown as Record<string, unknown>, requestId);
+  }
+
+  // UNVERIFIED: path and response shape ({items:[{id, nickname}]}) used to reuse a beneficiary by nickname.
+  listBeneficiaries(): Promise<any> {
+    return this.call("GET", `${this.baseUrl}/beneficiaries`);
+  }
+
+  // Confirmed live (201). Response has id, fee_amount, fee_currency, amount_payer_pays.
+  createTransfer(a: { beneficiary_id: string; transfer_amount: number; transfer_currency: string; transfer_method: TransferMethod; reference: string; source_currency?: string; reason?: string; requestId?: string }) {
     return this.post(
       "/transfers/create",
       {
         beneficiary_id: a.beneficiary_id,
         transfer_amount: a.transfer_amount,
         transfer_currency: a.transfer_currency,
+        source_currency: a.source_currency ?? a.transfer_currency,
         transfer_method: a.transfer_method,
         reference: a.reference,
-        source_currency: a.transfer_currency, // UNVERIFIED: required source fields
-        reason: "payment to supplier", // UNVERIFIED
+        reason: a.reason ?? "professional_business_services",
       },
       a.requestId,
     );
   }
 
   getTransfer(id: string): Promise<any> {
-    return this.call("GET", `${this.baseUrl}/transfers/${enc(id)}`); // UNVERIFIED path
+    return this.call("GET", `${this.baseUrl}/transfers/${enc(id)}`);
   }
 
-  // Sandbox only. A failed transfer ends CANCELLED; SENT is in flight, not final (guide).
-  simulateTransferTransition(id: string, status: string) {
-    return this.call("POST", `${this.baseUrl}/simulation/transfers/${enc(id)}/transition`, { status }); // UNVERIFIED
+  // Sandbox only, confirmed live: body key is next_status (SENT, then PAID). SENT is in flight; a failed transfer ends CANCELLED.
+  simulateTransferTransition(id: string, nextStatus: string) {
+    return this.call("POST", `${this.baseUrl}/simulation/transfers/${enc(id)}/transition`, { next_status: nextStatus });
   }
 }

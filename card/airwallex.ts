@@ -20,11 +20,25 @@ export type AirwallexOptions = {
   maxRetries?: number;
 };
 
+/** Strips URLs and 32+ hex tokens, like court/api.ts sanitizeError. */
+export function redact(s: string): string {
+  return s.replace(/https?:\/\/\S+/g, "[url]").replace(/(?:0x)?[0-9a-fA-F]{32,}/g, "[hex]");
+}
+
+/** ": <code>: <message>" from an Airwallex error body, redacted; empty when the body has neither. */
+function detailOf(body: unknown): string {
+  const b = body as { code?: unknown; message?: unknown } | null;
+  const code = typeof b?.code === "string" ? b.code : "";
+  const message = typeof b?.message === "string" ? b.message : "";
+  if (!code && !message) return "";
+  return redact(`: ${[code, message].filter(Boolean).join(": ")}`);
+}
+
 export class AirwallexError extends Error {
   status: number;
   body: unknown;
   constructor(status: number, body: unknown, where: string) {
-    super(`Airwallex ${where} failed with ${status}`);
+    super(`Airwallex ${where} failed with ${status}${detailOf(body)}`);
     this.name = "AirwallexError";
     this.status = status;
     this.body = body;

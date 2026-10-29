@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { SWIFT_FEE_EUR_CENTS } from "./airwallex.ts";
 
 const USDZ_CENT = 10n ** 16n; // base units per cent (18 decimals)
 
 /** The Airwallex calls settle.ts needs, so tests can stub them. */
 export interface TreasuryClient {
+  getBalances(): Promise<any>;
   simulateDeposit(a: { global_account_id: string; amount: number; reference: string }): Promise<any>;
   fxQuote(a: { sell_currency: string; buy_currency: string; buy_amount: number }): Promise<any>;
   fxConvert(a: { quote_id?: string; sell_currency: string; buy_currency: string; buy_amount: number }): Promise<any>;
@@ -63,26 +63,53 @@ export interface FeeArgs {
   invoiceId: string;
   ledger: Ledger;
   client: TreasuryClient;
+  /** EUR kept on top of eurAmount for the SWIFT fee, which is not known until the transfer exists. Default 20.00. */
+  feeBufferEur?: number;
 }
-export interface FeeResult { invoiceId: string; quoteId?: string; conversionId?: string; transferId?: string; replayed: boolean }
+export interface FeeResult {
+  invoiceId: string; quoteId?: string; conversionId?: string; transferId?: string;
+  feeAmount?: number; feeCurrency?: string; amountPayerPays?: number; replayed: boolean;
+}
 
-/** Quote USD->EUR for the fee plus the flat SWIFT charge, convert, then create the SWIFT transfer. Idempotent by invoice id. */
+// UNVERIFIED: balance row shape {currency, available_amount}; accepts an array or {items:[...]}.
+function eurAvailableCents(balances: any): bigint {
+  const rows: any[] = Array.isArray(balances) ? balances : (balances?.items ?? []);
+  const row = rows.find((r) => r.currency === "EUR");
+  return BigInt(Math.round(Number(row?.available_amount ?? 0) * 100));
+}
+
+/**
+ * Check the EUR balance; if it is below eurAmount + feeBuffer, convert the shortfall from USD; then create the
+ * SWIFT transfer and record the real fee. Idempotent by invoice id.
+ */
 export async function payLicenceFee(a: FeeArgs): Promise<FeeResult> {
   const key = `fee:${a.invoiceId}`;
   const stored = a.ledger.get(key);
   if (stored?.transferId) return { ...stored, replayed: true };
   const feeCents = BigInt(Math.round(a.eurAmount * 100));
-  const buyEur = major(feeCents + SWIFT_FEE_EUR_CENTS); // EUR 50 -> EUR 62.85
-  const quote = await a.client.fxQuote({ sell_currency: "USD", buy_currency: "EUR", buy_amount: buyEur });
-  const conversion = await a.client.fxConvert({ quote_id: quote?.id ?? quote?.quote_id, sell_currency: "USD", buy_currency: "EUR", buy_amount: buyEur }); // UNVERIFIED quote id field
+  const bufferCents = BigInt(Math.round((a.feeBufferEur ?? 20) * 100));
+  const shortfall = feeCents + bufferCents - eurAvailableCents(await a.client.getBalances());
+  let quoteId: string | undefined;
+  let conversionId: string | undefined;
+  if (shortfall > 0n) {
+    const buyEur = major(shortfall);
+    const quote = await a.client.fxQuote({ sell_currency: "USD", buy_currency: "EUR", buy_amount: buyEur });
+    quoteId = quote?.id ?? quote?.quote_id; // UNVERIFIED quote id field
+    const conversion = await a.client.fxConvert({ quote_id: quoteId, sell_currency: "USD", buy_currency: "EUR", buy_amount: buyEur });
+    conversionId = conversion?.id ?? conversion?.conversion_id;
+  }
   const transfer = await a.client.createTransfer({
     beneficiary_id: a.beneficiary,
     transfer_amount: major(feeCents),
     transfer_currency: "EUR",
+    source_currency: "EUR",
     transfer_method: "SWIFT",
     reference: a.invoiceId,
   });
-  const result = { invoiceId: a.invoiceId, quoteId: quote?.id ?? quote?.quote_id, conversionId: conversion?.id ?? conversion?.conversion_id, transferId: transfer?.id ?? transfer?.transfer_id };
+  const result = {
+    invoiceId: a.invoiceId, quoteId, conversionId, transferId: transfer?.id,
+    feeAmount: transfer?.fee_amount, feeCurrency: transfer?.fee_currency, amountPayerPays: transfer?.amount_payer_pays,
+  };
   a.ledger.put(key, result);
   return { ...result, replayed: false };
 }
