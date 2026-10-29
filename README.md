@@ -123,17 +123,28 @@ Everything below happened on **Metal testnet (chain 63825)** or the **Airwallex 
 | `CourtLedger` (receipt roots + rulings) | [`0x2528db9267bd6bc9950ab74ad83d748b64e18042`](https://testnet.metalntwx.com/address/0x2528db9267bd6bc9950ab74ad83d748b64e18042) |
 | `CourtVault` (reserve spender) | [`0xe0e90b1bc4792aa26cb83c7f2e82c3a19b7e46d8`](https://testnet.metalntwx.com/address/0xe0e90b1bc4792aa26cb83c7f2e82c3a19b7e46d8) |
 
-### Court
+### Court: one full case (`scripts/demo.ts`)
+The customer agent bought six quotes. DataCo served a **stale** TSLA quote and an **MSFT price 3% off**, and charged AAPL **twice**. Then the customer filed:
+
+> *"My agent never asked for NVDA, it wanted AMD. I was charged twice for AAPL. The TSLA quote was stale and the MSFT price was wrong. The GOOG price also looked wrong, but I can't tell you by how much."*
+
+| Claim | Finding | Verdict | Decided by | Purchase | Ruling | Refund |
+|---|---|---|---|---|---|---|
+| NVDA "never ordered" (A10) | signature names `?symbol=NVDA` | REJECT, the customer is liable | code | [`0xa52cc0…5d5c`](https://testnet.metalntwx.com/tx/0xa52cc0c6eb0b89234432eb05c0253589967a43ebec8b08fea583b09969ea5d5c) | n/a | n/a |
+| AAPL first charge (A12) | not a duplicate | REJECT | code | [`0xf6bd28…786c`](https://testnet.metalntwx.com/tx/0xf6bd28967c5c1da733ecfed8c05d6a0c97c1cc577920ef3c3c643859c32d786c) | n/a | n/a |
+| AAPL second charge (A12) | duplicate of the first | REFUND | code | [`0xbb8f3e…5531`](https://testnet.metalntwx.com/tx/0xbb8f3e5134b9aa88c292ff4099b4de253d6da37c15ae503d1c19d0df9c055531) | [`0xdbc74b…46a5`](https://testnet.metalntwx.com/tx/0xdbc74b31cd6a20db19411db50a4cabbcd321801a45d670507baa0fe3ba7b46a5) | [`0xdaf1eb…0b9d`](https://testnet.metalntwx.com/tx/0xdaf1eb85bab476b5ad1077cdfbb78be849302fbf651b91e47c8818cd354d0b9d) |
+| TSLA stale (A13.3) | breaks the signed 60 s freshness | REFUND | code | [`0xa34242…a062`](https://testnet.metalntwx.com/tx/0xa34242aea91183f461cf40a109734818abf69f4e7e9753dac65d0e2602eba062) | [`0x8c7140…d0ac`](https://testnet.metalntwx.com/tx/0x8c7140b54dfb6ff33ffdaf9f02b2a2e15df66a6dda4a5f3e6f65356c1a3ed0ac) | [`0xfd0895…b215`](https://testnet.metalntwx.com/tx/0xfd08953d89d1d49e477cc4d3d90305e60214e200e848437dfb4a195ab317b215) |
+| MSFT wrong (A13.3) | about 300 bps off, above the signed 50 bps limit | REFUND | code | [`0x05ba53…c2e2`](https://testnet.metalntwx.com/tx/0x05ba5309dd60e993506c3ebd94309a17e5340366f008da3062b15e0a4a35c2e2) | [`0xe6b37b…ad20`](https://testnet.metalntwx.com/tx/0xe6b37b768632326a59492120bc3a468b6a1af420b2bb7c53f83b1dee911aad20) | [`0xfc3a3a…f723`](https://testnet.metalntwx.com/tx/0xfc3a3ab8019ce082a3fdf130f59f3b579e84c158133ca0cd254378044a90f723) |
+| GOOG "looked wrong" (A13.3) | could not be checked (no GOOG reference feed); Claude escalated | REFUND, approved by a human bound to 0.05 | human | [`0xabe615…73ce`](https://testnet.metalntwx.com/tx/0xabe615bef30e1f513deade7fb4b44702dad0d4e4297bc9590e98613163c073ce) | [`0xfc425a…5d71`](https://testnet.metalntwx.com/tx/0xfc425a6a28669fbb0c2f56b5e59812e77ad79aac9ac265e800fcae4936bf5d71) | [`0x7324ea…492d`](https://testnet.metalntwx.com/tx/0x7324eaf52f00f2f9dad142471b8ca5941a7e6b44fdb7463345eb5c014533492d) |
+
 | Step | Transaction |
 |---|---|
-| Customer agent pays for `GET /quote?symbol=MSFT` (signed for the exact request and acceptance criteria) | [`0x682b91…2ae2`](https://testnet.metalntwx.com/tx/0x682b910e6ebbc09becc57d7a75eb70122d0a205d81b8db27bb85aec531892ae2) |
-| Receipts anchored (batch 1, 3 receipts, proofs verified on chain) | [`0xc0acba…ea36`](https://testnet.metalntwx.com/tx/0xc0acba65f4ec3197274a725943e2a879d889df07cf8256b867061a48e99bea36) |
-| Customer mandate updated to allow paying the court (opt-in) | [`0x23def5…f435`](https://testnet.metalntwx.com/tx/0x23def534dbc83bafb6b790e78e90f2ead4fad795a477ea59ed34d53b97a4f435) |
-| Dispute filed, filing bond paid over x402 | [`0xa3f1f6…3efc`](https://testnet.metalntwx.com/tx/0xa3f1f6f7c356d67dbb249ceae129be5547b95852546650a00eaa521080e53efc) |
-| Ruling published to `CourtVault` | [`0x1ade1c…96a3`](https://testnet.metalntwx.com/tx/0x1ade1cc13f6a215a0f4d2b0354cd1b128f441170ce1b7e53f28947ae594596a3) |
-| Refund executed from the seller's reserve after the objection window | [`0xff28f0…7ae6`](https://testnet.metalntwx.com/tx/0xff28f0c86dc29c689af210a6e15ca8ef29b06f290dfff69624125d89a39a7ae6) |
+| Six receipts anchored (`CourtLedger` batch 3) | [`0xdc4c28…80d8`](https://testnet.metalntwx.com/tx/0xdc4c2851274a221de5e5008b9ffbadcb62ccefef8f2e5835b86f07d14fe880d8) |
+| Dispute filed, filing bond paid over x402 | [`0xa761bf…30d3`](https://testnet.metalntwx.com/tx/0xa761bf21dd1491dcb6a75ceaa0883d99262292204402b0244208a1c00a9330d3) |
+| Filing bond refunded (the customer won some claims) | [`0xff2236…18f5`](https://testnet.metalntwx.com/tx/0xff2236d115f17fdbb940bc9cde4e9c5f199d7561ea97d579946e86ecf6ed18f5) |
+| Customer mandate lists the court as a payee (opt-in) | [`0x0147aa…ace5`](https://testnet.metalntwx.com/tx/0x0147aaaac8a9b0ea193e1ba9d1f70ae551b7a71172f3cd598529100aa4a3ace5) |
 
-On the live case, the claim *"my agent never asked for NVDA, it wanted AMD"* was **rejected by code**: the agent's signature names `?symbol=NVDA`. The claim *"the TSLA quote looked wrong"* was **escalated** by Claude, at confidence 0.2, because the evidence was too thin to decide.
+All four refunds were captured from DataCo's reserve in `CourtVault` after the seller's objection window, and the customer's balance shows them.
 
 ### Kit 11 business agents (price jump)
 | Step | Transaction / result |
