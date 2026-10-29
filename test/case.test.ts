@@ -47,16 +47,18 @@ const textReply = (v: unknown) => ({ content: [{ type: "text", text: JSON.string
 
 function stubModel(intakeClaims: unknown[], judgment: unknown) {
   const calls: string[] = [];
+  const prompts: string[] = [];
   const client = {
     messages: {
-      create: async (args: { system: string }) => {
+      create: async (args: { system: string; messages: { content: string }[] }) => {
+        prompts.push(args.messages[0].content);
         const isIntake = args.system === INTAKE_SYSTEM_PROMPT;
         calls.push(isIntake ? "intake" : "judge");
         return textReply(isIntake ? { claims: intakeClaims } : judgment);
       },
     },
   };
-  return { calls, model: { client, name: "stub-model" } };
+  return { calls, prompts, model: { client, name: "stub-model" } };
 }
 
 function makeDeps(over: Partial<CaseDeps> & { bodies: Record<string, string> }): CaseDeps {
@@ -163,4 +165,17 @@ test("store keeps a string like \"42n\" as a string and bigints as bigints", () 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the judge receives the delivered body, status, hash and signed request", async () => {
+  const { prompts, model } = stubModel([{ tx: TX1, code: "A13.3" }], { upheld: false, confidence: 0.9, rationale: "ok", citedEvidence: [] });
+  const deps = makeDeps({ bodies: { [TX1]: quote(123.45) }, model, reference: async () => null });
+  const result = await runCase(input([TX1]), deps);
+  const judgePrompt = prompts[1];
+  assert.match(judgePrompt, /"price":123\.45/);
+  assert.match(judgePrompt, /"resource":"GET \/quote\?symbol=TSLA"/);
+  const receipt = result.evidence[`receipt:${TX1}`] as Record<string, unknown>;
+  assert.deepEqual(Object.keys(receipt).sort(), ["anchored", "body", "responseHash", "settledAt", "status"]);
+  assert.equal(receipt.settledAt, new Date(SETTLED_MS).toISOString());
+  assert.deepEqual((receipt.body as { price: number }).price, 123.45);
 });

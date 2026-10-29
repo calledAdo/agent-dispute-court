@@ -71,14 +71,36 @@ async function fetchReference(sale: Sale | null, deps: CaseDeps): Promise<Refere
   }
 }
 
+const BODY_CAP = 2000;
+
+/** The delivered body as the judge should read it: parsed JSON, else the raw text capped. */
+function deliveredBody(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body.slice(0, BODY_CAP);
+  }
+}
+
 /** Keys the judge may cite: the same identifiers the checks put in Finding.evidence. */
 function evidenceFor(sales: Sale[], references: Map<string, ReferencePrice>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const sale of sales) {
     const { receipt, acceptance, ...rest } = sale;
-    out[sale.tx] = rest;
-    if (receipt !== null) out[`receipt:${sale.tx}`] = receipt;
-    if (acceptance !== null) out[`acceptance:${sale.tx}`] = acceptance;
+    const settledAt = new Date(sale.settledAt).toISOString();
+    out[sale.tx] = { ...rest, settledAt };
+    if (receipt !== null) {
+      out[`receipt:${sale.tx}`] = {
+        status: receipt.status,
+        responseHash: receipt.responseHash,
+        anchored: receipt.anchored,
+        settledAt,
+        body: deliveredBody(receipt.body),
+      };
+    }
+    if (acceptance !== null) {
+      out[`acceptance:${sale.tx}`] = { ...acceptance, resource: sale.resource, settledAt };
+    }
   }
   for (const ref of references.values()) {
     if (ref !== null) out[`reference:${ref.symbol}`] = ref;
