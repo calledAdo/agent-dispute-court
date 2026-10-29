@@ -52,6 +52,18 @@ export function parseRefusalCode(text: string): string | undefined {
   return /error: payment refused: ([A-Za-z0-9_]+)/.exec(text)?.[1];
 }
 
+export interface PayOptions { method?: string; body?: string; headers?: Record<string, string> }
+
+/** `transaction <hash>` and `body <text>` from `pay` output. A bare `body` line means the body follows on the next lines. */
+export function parsePayOutput(stdout: string): { body?: string; transaction?: string } {
+  const out: { body?: string; transaction?: string } = {};
+  const tx = /^\s*transaction[ \t]+(\S+)/m.exec(stdout);
+  if (tx) out.transaction = tx[1];
+  const b = /^\s*body[ \t]*(.*)$/m.exec(stdout);
+  if (b) out.body = (b[1].trim() !== "" ? b[1] : stdout.slice(b.index + b[0].length)).trim();
+  return out;
+}
+
 const USDZ_UNIT = 10n ** 18n;
 
 /** Decimal *USDZ ("0.04", "10") to base units. Throws on anything else; no floating point. */
@@ -131,6 +143,12 @@ export function createMetalCli(o: CliOptions = {}) {
     },
     verify: (a: { credential: string; issuer: string; tx?: string }) =>
       exec(["mandate", "verify", "--credential", a.credential, "--issuer", a.issuer, "--network", NETWORK, ...(a.tx ? ["--tx", a.tx] : [])]),
-    pay: (url: string, credential: string) => exec(["pay", url, "--mandate", credential, "--network", NETWORK]),
+    pay: async (url: string, credential: string, opts: PayOptions = {}): Promise<CliResult & { body?: string; transaction?: string }> => {
+      const result = await exec(["pay", url, "--mandate", credential, "--network", NETWORK,
+        ...(opts.method ? ["--method", opts.method] : []),
+        ...(opts.body !== undefined ? ["--body", opts.body] : []),
+        ...Object.entries(opts.headers ?? {}).flatMap(([k, v]) => ["--header", `${k}: ${v}`])]);
+      return { ...result, ...parsePayOutput(result.stdout) };
+    },
   };
 }

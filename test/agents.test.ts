@@ -144,3 +144,18 @@ test("a refusal line gives refused with its code", async () => {
   assert.equal(r.refusalCode, "mandate_budget_exceeded");
   assert.equal(r.error, undefined);
 });
+
+test("pay passes method, body and headers and parses body and transaction", async () => {
+  const seen: string[][] = [];
+  const cli = createMetalCli({ run: async (_f, args) => { seen.push(args); return { exitCode: 0, stdout: "transaction 0xabc\nbody {\"caseId\":\"c1\"}\n", stderr: "" }; } });
+  const r = await cli.pay("http://c/disputes", "c.json", { method: "POST", body: "{\"a\":1}", headers: { "x-k": "v" } });
+  assert.deepEqual(seen[0], ["--no-install", "metal-agent", "pay", "http://c/disputes", "--mandate", "c.json", "--network", "testnet", "--method", "POST", "--body", "{\"a\":1}", "--header", "x-k: v"]);
+  assert.equal(r.status, "paid");
+  assert.equal(r.transaction, "0xabc");
+  assert.equal(r.body, "{\"caseId\":\"c1\"}");
+});
+test("parsePayOutput reads a body that follows on the next lines, and tolerates absence", async () => {
+  const { parsePayOutput } = await import("../agents/cli.ts");
+  assert.deepEqual(parsePayOutput("status ok\nbody\n{\"x\":1}\n"), { body: "{\"x\":1}" });
+  assert.deepEqual(parsePayOutput("nothing here"), {});
+});

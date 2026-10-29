@@ -7,10 +7,11 @@ import { privateKeyToAccount } from "viem/accounts";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import { METAL_NETWORKS, registerMetalScheme } from "@metalntwx/metal-pay";
 import { verifyMandatePayment } from "@metalntwx/metal-pay/mandates";
-import { buildTree, receiptLeaf } from "../shared/merkle.ts";
+import { mapBatches } from "../shared/batches.ts";
 import { ReceiptLog } from "../seller/receipts.ts";
 import { METAL_TESTNET } from "../seller/offer.ts";
 import { defaultUpstream } from "../seller/server.ts";
+import { parseUnavailable } from "./reference.ts";
 import { createCourtApp } from "./api.ts";
 import { runCase } from "./case.ts";
 import type { CaseDeps, CaseInput } from "./case.ts";
@@ -43,28 +44,6 @@ function loadKey(path: string): Hex {
   return (key.startsWith("0x") ? key : `0x${key}`) as Hex;
 }
 
-/**
- * Batches for the evidence module: a batch is one DeliveriesCommitted event of SELLER on the ledger.
- * The seller anchors receipts in log order, so batch k (ascending) covers the next `count` receipts of
- * SELLER_RECEIPTS. A batch is accepted only if the root recomputed from those receipts equals the root in
- * the event; a mismatched batch still consumes its `count` receipts (so later batches stay aligned) but
- * maps to nothing, which the evidence module reports as "not anchored / could not check".
- */
-export function mapBatches(
-  events: { batch: bigint; root: string; count: bigint }[],
-  receipts: { tx: string; resource: string; requestHash: string; responseHash: string }[],
-): { batch: bigint; txs: string[] }[] {
-  const out: { batch: bigint; txs: string[] }[] = [];
-  let cursor = 0;
-  for (const ev of [...events].sort((a, b) => (a.batch < b.batch ? -1 : a.batch > b.batch ? 1 : 0))) {
-    const slice = receipts.slice(cursor, cursor + Number(ev.count));
-    cursor += Number(ev.count);
-    if (slice.length !== Number(ev.count) || slice.length === 0) continue;
-    if (buildTree(slice.map(receiptLeaf)).root.toLowerCase() === ev.root.toLowerCase()) out.push({ batch: ev.batch, txs: slice.map((r) => r.tx) });
-  }
-  return out;
-}
-
 function main(): void {
   const port = Number(process.env.COURT_PORT ?? 4022);
   const rpcUrl = required("METAL_RPC_URL");
@@ -81,6 +60,7 @@ function main(): void {
     process.exit(1);
   }
   const ledgerFromBlock = BigInt(fromBlockText);
+  const unavailable = parseUnavailable(process.env.REFERENCE_UNAVAILABLE);
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
   const account = privateKeyToAccount(loadKey(keyFile));
@@ -127,7 +107,7 @@ function main(): void {
     const evidence: EvidenceDeps = { publicClient, verify: verifyMandatePayment, ledger, ledgerAbi, seller, receipts, batches };
     return {
       evidence, model, policy,
-      reference: async (symbol, at) => ({ symbol, price: defaultUpstream(symbol), at }),
+      reference: async (symbol, at) => (unavailable.includes(symbol.toUpperCase()) ? null : { symbol, price: defaultUpstream(symbol), at }),
       priceList: { "GET /quote": parseUnits("0.05", 18) },
       duplicateWindowMs: 60000,
       now: () => Date.now(),
