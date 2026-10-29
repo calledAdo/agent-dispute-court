@@ -93,7 +93,7 @@ function main(): void {
     process.exit(1);
   }
   const port = Number(process.env.PORT ?? 4021);
-  const log = new ReceiptLog(new URL("./deliveries.jsonl", import.meta.url).pathname);
+  const log = new ReceiptLog(process.env.RECEIPT_LOG ?? new URL("../data/receipts.jsonl", import.meta.url).pathname);
   const app = createSeller({ payTo, rpcUrl, upstream: defaultUpstream, log, now: () => Date.now() });
   app.listen(port, () => console.log("seller on :" + port, "payTo", payTo));
 }
