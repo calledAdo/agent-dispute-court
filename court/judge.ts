@@ -21,6 +21,8 @@ export const INTAKE_SYSTEM_PROMPT = [
   "Use only the transactions in the list you are given; never invent a transaction hash.",
   "Map complaints to codes: 'never asked' or 'didn't order' -> A10; 'charged twice' -> A12; 'got nothing' or 'error' -> A13.1; 'wrong', 'stale' or 'bad data' -> A13.3; 'price or payee looked off' -> A14.",
   "For A10, if the customer names a different symbol or request than the one on the transaction, put it in allegedResource.",
+  "Never drop a grievance the customer raised: every transaction the complaint mentions, even vaguely or without detail (for example 'looked wrong, but I can't say how'), must become a claim. Vague quality complaints are A13.3; code and the judge decide whether they hold.",
+  "For 'charged twice' (A12), file an A12 claim on every listed transaction for that same request; never guess which one is the duplicate, because code decides that from the chain.",
   "Respond only with JSON matching the required schema.",
 ].join(" ");
 
