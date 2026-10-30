@@ -109,7 +109,8 @@ async function main(): Promise<void> {
   sub(`purchase: ${outcome(await cli.pay(raw, next))}`);
 
   say("Treasury moves earnings to the settlement address");
-  const date = new Date().toISOString().slice(0, 10);
+  // DEMO_RUN_ID lets a rehearsal or a new take get fresh ids; ids stay idempotent within a run.
+  const date = new Date().toISOString().slice(0, 10) + (process.env.DEMO_RUN_ID ? `-${process.env.DEMO_RUN_ID}` : "");
   const pull = await cli.pull({ credential: need("TREASURY_CRED"), to: need("SETTLEMENT_ADDRESS"), amount: "1.00", paymentId: `earnings-${date}` });
   sub(`pull: ${outcome(pull)}`);
   const tx = pull.fields.transaction;
