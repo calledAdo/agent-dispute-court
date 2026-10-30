@@ -143,8 +143,9 @@ async function main(): Promise<void> {
   // 5. Wait for the decision
   step(5, "Wait for the court's decision");
   let c = await getCase(caseId);
-  for (let i = 0; c.status === "RUNNING" && i < 60; i++) { await sleep(2000); c = await getCase(caseId); }
-  if (c.status === "RUNNING") fail("timed out after 120 s waiting for the decision");
+  const waitMs = Number(process.env.DEMO_DECISION_TIMEOUT_MS ?? 300_000);
+  for (let waited = 0; c.status === "RUNNING" && waited < waitMs; waited += 2000) { await sleep(2000); c = await getCase(caseId); }
+  if (c.status === "RUNNING") fail(`timed out after ${waitMs / 1000} s waiting for the decision`);
   if (c.status === "FAILED" || c.status === "FILER_MISMATCH") fail(`case ${c.status}: ${c.error ?? ""}`);
   const showTable = (cs: CaseJson) => {
     for (const cl of cs.claims) {
