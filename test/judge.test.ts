@@ -52,11 +52,53 @@ test("intake drops unknown tx and keeps valid claims with allegedResource", asyn
   assert.notEqual(claims[0]!.id, claims[1]!.id);
 });
 
-test("intake returns no claims for malformed output", async () => {
-  assert.deepEqual(await intake("x", sales, stub({ content: [] }).client, "m"), []);
-  assert.deepEqual(await intake("x", sales, stub(toolUse("submit_claims", { claims: "no" })).client, "m"), []);
-  assert.deepEqual(await intake("x", sales, stub(null).client, "m"), []);
-  assert.deepEqual(await intake("x", sales, stub({ content: [{ type: "text", text: "not json" }] }).client, "m"), []);
+test("intake throws on unusable output instead of returning no claims", async () => {
+  const bad: unknown[] = [
+    { content: [] },
+    toolUse("x", { claims: "no" }),
+    null,
+    { content: [{ type: "text", text: "not json" }] },
+    { stop_reason: "max_tokens", content: [{ type: "text", text: '{"claims":[{"tx":' }] },
+    { stop_reason: "max_tokens", content: [{ type: "text", text: '{"claims":[]}' }] },
+  ];
+  for (const content of bad) {
+    await assert.rejects(intake("x", sales, stub(content).client, "m"), (e: Error) => {
+      assert.equal(e.name, "IntakeError");
+      assert.match(e.message, /^model_output_invalid: /);
+      return true;
+    });
+  }
+});
+
+test("intake returns [] only for a valid empty claims array", async () => {
+  assert.deepEqual(await intake("x", sales, stub(toolUse("x", { claims: [] })).client, "m"), []);
+});
+
+test("thinking blocks are skipped and text blocks are joined", async () => {
+  const content = { stop_reason: "end_turn", content: [
+    { type: "thinking", thinking: "hmm", signature: "s" },
+    { type: "redacted_thinking", data: "x" },
+    { type: "text", text: `{"claims":[{"tx":"${TX1}",` },
+    { type: "text", text: '"code":"A12"}]}' },
+  ] };
+  const claims = await intake("x", sales, stub(content).client, "m");
+  assert.equal(claims.length, 1);
+  assert.equal(claims[0]!.code, "A12");
+  const j = await judgeQuality({ id: "c", tx: TX1 as `0x${string}`, code: "A13.3" }, {}, "c", stub({
+    content: [{ type: "thinking", thinking: "t", signature: "s" },
+      { type: "text", text: '{"upheld":true,"confidence":0.9,"rationale":"r","citedEvidence":[]}' }],
+  }).client, "m");
+  assert.equal(j.upheld, true);
+});
+
+test("both calls send max_tokens 8000; truncated judge output falls back", async () => {
+  const a = stub(toolUse("x", { claims: [] }));
+  await intake("x", sales, a.client, "m");
+  assert.equal(a.calls[0].max_tokens, 8000);
+  const b = stub({ stop_reason: "max_tokens", content: [{ type: "text", text: '{"upheld":true,"confidence":1,"rationale":"r","citedEvidence":[]}' }] });
+  const j = await judgeQuality({ id: "c", tx: TX1 as `0x${string}`, code: "A13.3" }, {}, "c", b.client, "m");
+  assert.equal(j.rationale, "model_output_invalid");
+  assert.equal(b.calls[0].max_tokens, 8000);
 });
 
 const claim: Claim = { id: "c1", tx: TX1 as `0x${string}`, code: "A13.3" };

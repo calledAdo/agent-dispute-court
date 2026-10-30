@@ -33,6 +33,10 @@ export interface CaseResult {
   refundFee: boolean;
   summary: string;
   evidence: Record<string, unknown>;
+  /** True when the model's intake failed and the fixed one-claim-per-tx fallback was used. */
+  intakeFallback?: boolean;
+  /** Sanitized cause of the intake failure; set with intakeFallback. */
+  intakeFallbackReason?: string;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -42,14 +46,43 @@ function fallbackClaims(txs: `0x${string}`[]): Claim[] {
   return txs.map((tx, i) => ({ id: `claim-${i + 1}`, tx, code: "A13.3" as const }));
 }
 
-async function buildClaims(input: CaseInput, sales: Sale[], deps: CaseDeps): Promise<Claim[]> {
-  if (deps.model === null) return fallbackClaims(input.txs);
+/** Short, single-line error text with no URLs or long hex tokens. (Same rule as api.ts; not imported to avoid loading express.) */
+function sanitizeReason(e: unknown): string {
+  const raw = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  return raw.split("\n")[0].replace(/https?:\/\/\S+/g, "<url>").replace(/[0-9a-fA-F]{32,}/g, "<redacted>").slice(0, 200);
+}
+
+async function buildClaims(
+  input: CaseInput,
+  sales: Sale[],
+  deps: CaseDeps,
+): Promise<{ claims: Claim[]; fallbackReason?: string }> {
+  if (deps.model === null) return { claims: fallbackClaims(input.txs) };
   try {
     const summary = sales.map((s) => ({ tx: s.tx, resource: s.resource, settledAt: s.settledAt }));
-    return await intake(input.complaint, summary, deps.model.client, deps.model.name);
-  } catch {
-    return fallbackClaims(input.txs);
+    return { claims: await intake(input.complaint, summary, deps.model.client, deps.model.name) };
+  } catch (e) {
+    return { claims: fallbackClaims(input.txs), fallbackReason: sanitizeReason(e) };
   }
+}
+
+/** A real complaint that produced no claims is never dismissed: a human decides each disputed tx. */
+function needsHumanRulings(input: CaseInput, sales: Sale[]): Ruling[] {
+  return input.txs.map((tx, i) => {
+    const sale = sales.find((s) => same(s.tx, tx)) ?? null;
+    return {
+      claimId: `unclassified-${i + 1}`,
+      tx,
+      code: "A13.3",
+      verdict: "ESCALATE",
+      liable: "NONE",
+      refund: 0n,
+      proposedRefund: sale?.amount ?? 0n,
+      reason: "no_claims_identified_needs_human",
+      evidence: sale ? [sale.tx] : [],
+      decidedBy: "code",
+    };
+  });
 }
 
 function requestedSymbol(resource: string): string | null {
@@ -110,7 +143,13 @@ function evidenceFor(sales: Sale[], references: Map<string, ReferencePrice>): Re
 
 export async function runCase(input: CaseInput, deps: CaseDeps): Promise<CaseResult> {
   const sales = await assembleHistory(input.payer, input.txs, deps.evidence, input.buyerOrders);
-  const claims = await buildClaims(input, sales, deps);
+  const { claims, fallbackReason } = await buildClaims(input, sales, deps);
+  const fallback = fallbackReason === undefined ? {} : { intakeFallback: true, intakeFallbackReason: fallbackReason };
+  if (claims.length === 0 && input.complaint.trim() !== "") {
+    const rulings = needsHumanRulings(input, sales);
+    const { refundFee } = settleFilingFee(rulings, deps.policy);
+    return { id: input.id, claims, findings: [], rulings, refundFee, summary: explain(rulings), evidence: evidenceFor(sales, new Map()), ...fallback };
+  }
   const saleOf = (tx: string) => sales.find((s) => same(s.tx, tx)) ?? null;
 
   const references = new Map<string, ReferencePrice>();
@@ -151,5 +190,5 @@ export async function runCase(input: CaseInput, deps: CaseDeps): Promise<CaseRes
   }
 
   const { refundFee } = settleFilingFee(rulings, deps.policy);
-  return { id: input.id, claims, findings, rulings, refundFee, summary: explain(rulings), evidence };
+  return { id: input.id, claims, findings, rulings, refundFee, summary: explain(rulings), evidence, ...fallback };
 }

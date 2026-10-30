@@ -126,6 +126,36 @@ test("a sale by another payer is not found and escalates", async () => {
   assert.equal(result.rulings[0].verdict, "ESCALATE");
 });
 
+test("zero claims for a real complaint escalates every tx to a human, never dismisses", async () => {
+  const { model } = stubModel([], {});
+  const deps = makeDeps({ bodies: { [TX1]: quote(100) }, model });
+  const result = await runCase(input([TX1, TX2]), deps);
+  assert.equal(result.rulings.length, 2);
+  for (const r of result.rulings) {
+    assert.equal(r.verdict, "ESCALATE");
+    assert.equal(r.liable, "NONE");
+    assert.equal(r.decidedBy, "code");
+    assert.equal(r.reason, "no_claims_identified_needs_human");
+  }
+  assert.equal(result.rulings[0].proposedRefund, AMOUNT); // sale exists
+  assert.equal(result.rulings[1].proposedRefund, AMOUNT);
+  assert.equal(result.refundFee, false);
+  assert.equal(result.intakeFallback, undefined);
+  const noSale = await runCase(input([TX1]), makeDeps({ bodies: {}, model, evidence: evidenceDeps({}, "0x00000000000000000000000000000000000000ee") }));
+  assert.equal(noSale.rulings[0].proposedRefund, 0n);
+  assert.equal(noSale.rulings[0].verdict, "ESCALATE");
+});
+
+test("intake that throws keeps the per-tx fallback and records why", async () => {
+  const client = { messages: { create: async () => { throw new Error("truncated output http://x.test/key " + "a".repeat(40)); } } };
+  const deps = makeDeps({ bodies: { [TX1]: quote(110) }, model: { client, name: "m" } });
+  const result = await runCase(input([TX1]), deps);
+  assert.equal(result.intakeFallback, true);
+  assert.match(result.intakeFallbackReason ?? "", /truncated output <url> <redacted>/);
+  assert.equal(result.claims.length, 1);
+  assert.equal(result.rulings[0].verdict, "REFUND");
+});
+
 test("a model that throws falls back to code-only handling", async () => {
   const client = { messages: { create: async () => { throw new Error("network"); } } };
   const deps = makeDeps({ bodies: { [TX1]: quote(110) }, model: { client, name: "m" } });

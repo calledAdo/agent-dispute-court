@@ -67,24 +67,37 @@ const JUDGE_SCHEMA = {
   additionalProperties: false,
 };
 
-/** Parse the JSON object in the first text block of a Messages API response, or null. */
-function jsonOutput(response: unknown): Record<string, unknown> | null {
-  if (typeof response !== "object" || response === null) return null;
-  const content = (response as { content?: unknown }).content;
-  if (!Array.isArray(content)) return null;
-  const block = content.find(
-    (b) => typeof b === "object" && b !== null && (b as { type?: unknown }).type === "text",
-  ) as { text?: unknown } | undefined;
-  if (block === undefined || typeof block.text !== "string") return null;
-  try {
-    const parsed: unknown = JSON.parse(block.text);
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // fall through: not JSON
+export class IntakeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IntakeError";
   }
-  return null;
+}
+
+/**
+ * Parse the JSON object from the text blocks of a Messages API response.
+ * Thinking blocks are skipped. Returns the object, or a short reason it is unusable.
+ */
+function jsonOutput(response: unknown): { ok: true; value: Record<string, unknown> } | { ok: false; reason: string } {
+  if (typeof response !== "object" || response === null) return { ok: false, reason: "no_response" };
+  const r = response as { content?: unknown; stop_reason?: unknown };
+  if (r.stop_reason === "max_tokens") return { ok: false, reason: "truncated_max_tokens" };
+  if (!Array.isArray(r.content)) return { ok: false, reason: "no_content" };
+  const text = r.content
+    .filter((b) => typeof b === "object" && b !== null && (b as { type?: unknown }).type === "text")
+    .map((b) => (b as { text?: unknown }).text)
+    .filter((t): t is string => typeof t === "string")
+    .join("");
+  if (text === "") return { ok: false, reason: "no_text_block" };
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      return { ok: true, value: parsed as Record<string, unknown> };
+    }
+    return { ok: false, reason: "not_a_json_object" };
+  } catch {
+    return { ok: false, reason: "unparseable_json" };
+  }
 }
 
 export async function intake(
@@ -95,7 +108,7 @@ export async function intake(
 ): Promise<Claim[]> {
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: 8000,
     system: INTAKE_SYSTEM_PROMPT,
     output_config: { format: { type: "json_schema", schema: INTAKE_SCHEMA } },
     messages: [
@@ -105,8 +118,11 @@ export async function intake(
       },
     ],
   });
-  const input = jsonOutput(response);
-  if (input === null || !Array.isArray(input.claims)) return [];
+  const out = jsonOutput(response);
+  // An unreadable answer must not look like "no claims": that would silently dismiss a dispute.
+  if (!out.ok) throw new IntakeError(`model_output_invalid: ${out.reason}`);
+  const input = out.value;
+  if (!Array.isArray(input.claims)) throw new IntakeError("model_output_invalid: claims_not_array");
 
   const known = new Set(sales.map((s) => s.tx));
   const claims: Claim[] = [];
@@ -144,7 +160,7 @@ export async function judgeQuality(
 ): Promise<Judgment> {
   const response = await client.messages.create({
     model,
-    max_tokens: 1024,
+    max_tokens: 8000,
     system: JUDGE_SYSTEM_PROMPT,
     output_config: { format: { type: "json_schema", schema: JUDGE_SCHEMA } },
     messages: [
@@ -157,8 +173,9 @@ export async function judgeQuality(
       },
     ],
   });
-  const input = jsonOutput(response);
-  if (input === null) return { ...INVALID };
+  const out = jsonOutput(response);
+  if (!out.ok) return { ...INVALID };
+  const input = out.value;
   const { upheld, confidence, rationale, citedEvidence } = input;
   if (
     typeof upheld !== "boolean" ||
