@@ -1,12 +1,14 @@
 # Agent Dispute Court
 
-**Chargebacks for agent-to-agent payments, with verdicts that execute themselves.**
+**Chargebacks for agent-to-agent payments, with verdicts that execute themselves, and buying agents that use them.**
 
 Card payments have 50 years of dispute rules: reason codes, evidence, deadlines, chargebacks. Agent payments over x402 have none. Once a stablecoin payment settles there is no issuer to call, and the x402 Foundation is still debating how disputes should work ([#3500](https://github.com/x402-foundation/x402/issues/3500), [#3678](https://github.com/x402-foundation/x402/issues/3678), [#3945](https://github.com/x402-foundation/x402/issues/3945)).
 
 Agent Dispute Court is a working resolver for those proposals. It decides each claim from cryptographic evidence, uses Claude only where judgment is genuinely needed, and **pays refunds on chain from a seller reserve that the court itself cannot misuse**. The same court also handles ordinary card chargebacks through Airwallex.
 
-> Airwallex Agentic Banking Hackathon, primary track **x402 Business Agents** (Starter Kit 11), with the evidence-versus-cost logic of **Kit 4 Dispute Response**. Built on **Metal** testnet and the **Airwallex** sandbox.
+On top of the court sits a **sourcing agent with recourse**: it buys each AI step from the best of three Claude-backed x402 providers, reroutes on price spikes and slow providers, checks every delivery against what it signed for, **files disputes by itself** when a paid delivery is broken, and routes by the court's verdicts, so providers that lose cases get used less.
+
+> Airwallex Agentic Banking Hackathon, primary track **x402 Business Agents** (Starter Kit 11), with **Kit 12 Inference Sourcing** and the evidence-versus-cost logic of **Kit 4 Dispute Response**. Built on **Metal** testnet and the **Airwallex** sandbox.
 
 ---
 
@@ -22,6 +24,21 @@ Agent Dispute Court is a working resolver for those proposals. It decides each c
 | Can the court steal? | n/a | No. It can only pay the named payer, capped, once, after an objection window |
 
 Metal's docs state that a signed order covers "the route, the price, the payee and the network, not the request's parameters." We found that the agent signs the *entire* offer, so the seller can put the canonical request, its hash and the acceptance criteria into the offer. **We verified on chain that this binds the agent to the exact query and the quality bar.**
+
+## Sourcing agent with recourse
+
+An agent that pays other agents needs a way to get its money back. This one has it.
+
+| Provider | Model | Price | Dispute reserve |
+|---|---|---|---|
+| Swift | Claude Haiku | 0.02 *USDZ | 0.5 held in `CourtVault` |
+| Sterling | Claude Sonnet | 0.03 *USDZ | 0.5 held in `CourtVault` |
+| Summit | Claude Opus | 0.06 *USDZ | 0.5 held in `CourtVault` |
+
+- **Signed delivery standard.** Every offer carries an `infer-v1` acceptance (`shared/infer.ts`): JSON with the task, a `requestHash` that echoes the exact request paid for, a non-empty summary within the length limit, and 1 to 5 keywords. The provider builds to it, the agent checks against it, and the court rules on it, all with the same pure function, so they always agree.
+- **Routing** (`agents/router.ts`). Each step goes to the cheapest provider that is under the price cap and answers its status probe in time. The score is `price × (1 + 2 × loss rate)`, with the loss rate taken from the court's public `GET /reputation`: a provider that loses every dispute costs three times its sticker price.
+- **Recourse** (`agents/sourcing.ts`). A delivery that fails the standard is not accepted: the agent re-buys the step elsewhere, then files one dispute per provider with a complaint it writes deterministically. Code decides it (no model needed), the refund is captured from the provider's reserve, and the provider's record changes the next routing decision.
+- **Limits on chain.** The agent pays under its own Metal mandate: 0.06 per payment, 3 in total, and only to the three providers and the court.
 
 ---
 
@@ -123,6 +140,22 @@ Everything below happened on **Metal testnet (chain 63825)** or the **Airwallex 
 | `CourtLedger` (receipt roots + rulings) | [`0x2528db9267bd6bc9950ab74ad83d748b64e18042`](https://testnet.metalntwx.com/address/0x2528db9267bd6bc9950ab74ad83d748b64e18042) |
 | `CourtVault` (reserve spender) | [`0xe0e90b1bc4792aa26cb83c7f2e82c3a19b7e46d8`](https://testnet.metalntwx.com/address/0xe0e90b1bc4792aa26cb83c7f2e82c3a19b7e46d8) |
 
+### Sourcing agent: six documents, one lawsuit (`scripts/sourcing-demo.ts`)
+
+| Step | What happened | Tx |
+|---|---|---|
+| Docs 1–2 | Cheapest provider wins: Swift, 0.02 each | [`0x8936dd…34f7`](https://testnet.metalntwx.com/tx/0x8936dd8aef40b225fc5194e07b0c7f285de19e949d335a2e70cf66ad24eb34f7), [`0x18d4ec…4bd1`](https://testnet.metalntwx.com/tx/0x18d4ecd2c4e9bcdefb258eaa4cccfb1ca975217964fd339eda454c4fc3084bd1) |
+| Doc 3 | Swift jumps to 0.07, over the cap; rerouted to Sterling | [`0x6b8e08…e802`](https://testnet.metalntwx.com/tx/0x6b8e088697266b170a3f71f88691502e63f1d55f73bb04939df0e5d8c7f2e802) |
+| Doc 4 | Sterling paid, delivers a truncated body (`body_unparseable`) | [`0x6bf4a2…9b33`](https://testnet.metalntwx.com/tx/0x6bf4a2d2f8448bb1550e0fe8ef0a6915cfc8d0c10c9a859ec061f46923389b33) |
+| Doc 4 | Re-bought from Summit, accepted | [`0xf16102…4f99`](https://testnet.metalntwx.com/tx/0xf16102e4cb0207bfffa31f749aacebe1479ca51985924b4d43b3acdf9f4c4f99) |
+| Doc 5 | Summit answers in 5 s, excluded as slow; Sterling delivers | [`0xcc1bbd…8f73`](https://testnet.metalntwx.com/tx/0xcc1bbda315f1f3a7cc7400a874b87a7e1e9f82dbb0a7d6499500c1c3e2458f73) |
+| Anchor | Sterling's 3 receipts committed as one Merkle root | [`0x2149a2…1943`](https://testnet.metalntwx.com/tx/0x2149a29bd795a6a956e9b8c9b1f411b542cdbcce0a8128479f23128b8df61943) |
+| Dispute | The agent files against Sterling and pays the filing bond | [`0x901f87…96f3`](https://testnet.metalntwx.com/tx/0x901f8771d47d4c1299c90e9ad5559c3553ae736e795aa13bbcec3cc17b6896f3) |
+| Ruling | A13.3, decided by code: REFUND 0.03, published | [`0x264d05…f964`](https://testnet.metalntwx.com/tx/0x264d05bf267ce55e7a91bba03b3362c4fa5651563870435f0e9680681fa8f964) |
+| Doc 6 | Sterling now scores 0.03 × 3 = 0.09, worse than Summit; Swift (back to 0.02) wins | [`0x4fb4a9…ad63`](https://testnet.metalntwx.com/tx/0x4fb4a94a8d3e4edb4b673a3b34d5314deab456f35ac013c8feda2bdf9c52ad63) |
+
+After the objection window, the 0.03 refund was captured from Sterling's reserve and the filing bond was returned. Six of six documents completed for 0.21 *USDZ spent and 0.03 recovered.
+
 ### Court: one full case (`scripts/demo.ts`)
 The customer agent bought six quotes. DataCo served a **stale** TSLA quote and an **MSFT price 3% off**, and charged AAPL **twice**. Then the customer filed:
 
@@ -187,17 +220,18 @@ A card dispute is challenged only when `p × amount > dispute fee`.
 | Path | What |
 |---|---|
 | `seller/` | DataCo API: per-request signed offers, receipts, Merkle anchoring |
+| `providers/` | Claude-backed x402 inference providers (Swift, Sterling, Summit) with operator price, latency and fault controls |
 | `court/` | Evidence, checks, Claude clerk and judge, verdicts, case runner, `CourtVault` remedy, HTTP API, store |
 | `card/` | Airwallex client, Kit 4 decision logic, evidence PDF builder |
 | `treasury/` | Deposits by tx-hash reference, FX, beneficiaries, SWIFT licence fee |
-| `agents/` | Upstream provider, mandate planner, `metal-agent` CLI wrapper |
+| `agents/` | Sourcing router and recourse loop, upstream provider, mandate planner, `metal-agent` CLI wrapper |
 | `contracts/` | `CourtLedger.sol`, `CourtVault.sol` (+ `build/`) |
 | `console/` | Operator console (plain HTML/CSS/JS, strict CSP) |
-| `shared/` | Types, Merkle tree (MetalAssertions-compatible hashing) |
-| `scripts/` | `card-demo.ts`, `kit11-demo.ts`, `setup-beneficiary.ts`, `compile.ts`, live smoke tests |
+| `shared/` | Types, `infer-v1` delivery standard, Merkle tree (MetalAssertions-compatible hashing) |
+| `scripts/` | `sourcing-demo.ts`, `demo.ts`, `card-demo.ts`, `kit11-demo.ts`, `setup-beneficiary.ts`, `compile.ts`, live smoke tests |
 | `tasks/` | The specs each module was built from |
 
-The suite has 181 tests, run with `npm test`; none of them touch the network.
+The suite has 251 tests, run with `npm test`; none of them touch the network.
 
 ---
 
@@ -223,11 +257,16 @@ SELLER_PAY_TO=0x... METAL_RPC_URL=... PORT=4031 node seller/server.ts
 METAL_RPC_URL=... COURT_KEY_FILE=/path/court.key.json \
 COURT_VAULT=0xe0e90b1bc4792aa26cb83c7f2e82c3a19b7e46d8 \
 COURT_LEDGER=0x2528db9267bd6bc9950ab74ad83d748b64e18042 COURT_LEDGER_FROM_BLOCK=8345602 \
-SELLER=0x... SELLER_RECEIPTS=data/receipts.jsonl \
+COURT_SELLERS=sellers.json \
 OPERATOR_TOKEN=... ANTHROPIC_API_KEY=... COURT_PORT=4022 \
 node court/main.ts
 ```
-Open the console at `http://localhost:4022/console/`.
+`sellers.json` lists every seller the court serves, each with its receipt log and price list:
+```json
+[{"name":"DataCo","address":"0x...","receipts":"data/receipts.jsonl","priceList":{"GET /quote":"0.05"}},
+ {"name":"Swift","address":"0x...","receipts":"data/receipts-swift.jsonl","priceList":{"GET /infer":"0.02"}}]
+```
+With a single seller you can set `SELLER=0x... SELLER_RECEIPTS=...` instead. Open the console at `http://localhost:4022/console/`.
 
 **3. File a dispute as the customer's agent** (its mandate must list the court as a payee):
 ```bash
@@ -235,12 +274,20 @@ npx metal-agent pay http://127.0.0.1:4022/disputes --mandate customer.json --net
   --method POST --body '{"payer":"0x...","txs":["0x..."],"complaint":"My agent never asked for NVDA."}'
 ```
 
-**4. Card rail (Kit 4)**
+**4. Sourcing agent with recourse.** Start the three providers (launch lines are in the header of `providers/server.ts`), give the buying agent a mandate that lists them and the court, then:
+```bash
+PROVIDER_URLS=http://127.0.0.1:4061,http://127.0.0.1:4062,http://127.0.0.1:4063 \
+PROVIDER_KEY_FILES=/path/swift.key.json,/path/sterling.key.json,/path/summit.key.json \
+CUSTOMER_CRED=/path/sourcing-buyer.json STEP_MAX_PRICE=0.06 node scripts/sourcing-demo.ts
+```
+The full environment variable list is in the script header.
+
+**5. Card rail (Kit 4)**
 ```bash
 AWX_CLIENT_ID=... AWX_API_KEY=... node scripts/card-demo.ts
 ```
 
-**5. Kit 11 business agents and treasury.** Start the upstream provider:
+**6. Kit 11 business agents and treasury.** Start the upstream provider:
 ```bash
 UPSTREAM_PAY_TO=0x... OPERATOR_TOKEN=... PORT=4051 node agents/upstream.ts
 ```

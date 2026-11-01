@@ -12,7 +12,7 @@ import { ReceiptLog } from "../seller/receipts.ts";
 import { METAL_TESTNET } from "../seller/offer.ts";
 import { defaultUpstream } from "../seller/server.ts";
 import { parseUnavailable } from "./reference.ts";
-import { createCourtApp } from "./api.ts";
+import { createCourtApp, sanitizeError } from "./api.ts";
 import { runCase } from "./case.ts";
 import type { CaseDeps, CaseInput } from "./case.ts";
 import { loadSellers } from "./sellers.ts";
@@ -23,7 +23,7 @@ import type { RemedyDeps } from "./remedy.ts";
 import type { EvidenceDeps } from "./evidence.ts";
 import type { Policy } from "./verdict.ts";
 
-const LOG_CHUNK = 50000n;
+const LOG_CHUNK = 100000n; // Metal's eth_getLogs range limit
 const GAS = { gas: 300000n, maxFeePerGas: 1n, maxPriorityFeePerGas: 1n } as const;
 const tokenAbi = parseAbi(["function transfer(address to, uint256 amount) returns (bool)"]);
 const ledgerEvents = parseAbi(["event DeliveriesCommitted(address indexed seller, uint256 indexed batch, bytes32 root, uint256 count, string uri)"]);
@@ -96,6 +96,7 @@ function main(): void {
     receipts: ReceiptLog;
     events: { batch: bigint; root: string; count: bigint }[];
     scannedTo: bigint;
+    syncing: Promise<void> | null;
   }
 
   // Each seller has its own receipt log and its own place in the ledger's event stream.
@@ -106,11 +107,18 @@ function main(): void {
       receipts: new ReceiptLog(config.receipts),
       events: [],
       scannedTo: ledgerFromBlock - 1n,
+      syncing: null,
     });
   }
 
   // Metal's RPC caps eth_getLogs ranges, so scan in chunks and remember what was scanned.
-  async function syncEvents(runtime: SellerRuntime): Promise<void> {
+  // Concurrent callers share one scan, so an event is never recorded twice.
+  function syncEvents(runtime: SellerRuntime): Promise<void> {
+    runtime.syncing ??= scan(runtime).finally(() => { runtime.syncing = null; });
+    return runtime.syncing;
+  }
+
+  async function scan(runtime: SellerRuntime): Promise<void> {
     const head = await publicClient.getBlockNumber();
     while (runtime.scannedTo < head) {
       const from = runtime.scannedTo + 1n;
@@ -179,6 +187,10 @@ function main(): void {
     now: () => Date.now(),
   });
   app.listen(port, () => console.log("court on :" + port, "payTo", account.address));
+  // Catch up on every seller's anchors now, so the first case does not wait for a full scan.
+  for (const runtime of runtimes.values()) {
+    syncEvents(runtime).catch((e) => console.error("ledger scan failed, will retry on first case:", sanitizeError(e)));
+  }
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) main();
