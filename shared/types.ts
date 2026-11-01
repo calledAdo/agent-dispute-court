@@ -22,11 +22,21 @@ export interface Receipt {
   anchored: boolean | null;   // Merkle proof verified on chain; null = could not check
 }
 
-export interface Acceptance {
+export interface QuoteAcceptance {
   verifier: "quote-v1";
   maxStalenessMs: number;     // quote.asOf must be within this of settledAt
   maxDeviationBps: number;    // |quote.price - reference| / reference, in basis points
 }
+
+/** Delivery standard for one inference step; checked by shared/infer.ts, no reference needed. */
+export interface InferAcceptance {
+  verifier: "infer-v1";
+  task: "summary-v1";
+  maxChars: number;           // summary length limit
+  maxKeywords: number;        // keywords: 1..maxKeywords non-empty strings
+}
+
+export type Acceptance = QuoteAcceptance | InferAcceptance;
 
 /** Reference price at settlement time, from the upstream source. null = unavailable. */
 export type ReferencePrice = { symbol: string; price: number; at: number } | null;
