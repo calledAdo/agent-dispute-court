@@ -3,7 +3,7 @@
 You are implementing one task at a time for the Agent Dispute Court. A senior engineer reviews every change. Read this file and the task file you are given before you write code.
 
 ## What the product is
-A seller (DataCo) sells market data per request over x402 on Metal testnet. The buying agent signs an order for the exact request. Each delivery is logged as a receipt and anchored on chain as a Merkle root. When a customer disputes charges, the court decides each claim from evidence. Refunds are paid from a seller reserve through the `CourtVault` contract (see `contracts/`).
+Agent Dispute Court is buyer protection for agent payments. Sellers (DataCo quotes; Swift, Sterling and Summit inference) sell per request over x402 on Metal testnet, and a sourcing agent buys from them and disputes broken deliveries itself. The buying agent signs an order for the exact request. Each delivery is logged as a receipt and anchored on chain as a Merkle root. When a customer disputes charges, the court decides each claim from evidence. Refunds are paid from a seller reserve through the `CourtVault` contract (see `contracts/`).
 
 ## Hard rules
 - Runtime: Node 26, ESM, **TypeScript run natively by Node** (type stripping). Only *erasable* TypeScript: no `enum`, no `namespace`, no parameter properties. Import local files with the `.ts` extension.
