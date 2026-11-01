@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { createCourtApp, sanitizeError } from "../court/api.ts";
 import type { CourtAppDeps, StoredCase } from "../court/api.ts";
 import type { CaseInput, CaseResult } from "../court/case.ts";
+import type { SellerConfig } from "../court/sellers.ts";
 import type { CaseStore } from "../court/store.ts";
 import type { Ruling } from "../court/verdict.ts";
 import type { NextFunction, Request, Response } from "express";
@@ -16,6 +17,10 @@ const FEE = 10_000_000_000_000_000n;
 const AMOUNT = 50_000_000_000_000_000n;
 const policy = { autoRefundMax: AMOUNT, escalateAbove: AMOUNT, filingFee: FEE };
 
+const DATA_CO: SellerConfig = { name: "DataCo", address: "0x00000000000000000000000000000000000000aa", receipts: "data/co.jsonl", priceList: { "GET /quote": "0.05" } };
+const SWIFT: SellerConfig = { name: "Swift", address: "0x00000000000000000000000000000000000000bb", receipts: "data/swift.jsonl", priceList: { "GET /infer": "0.02" } };
+const SELLERS = [DATA_CO, SWIFT];
+
 const ruling = (claimId: string, tx: string, verdict: Ruling["verdict"]): Ruling => ({
   claimId, tx, code: "A13.3", verdict, liable: verdict === "REFUND" ? "SELLER" : "NONE",
   refund: verdict === "REFUND" ? AMOUNT : 0n, proposedRefund: AMOUNT, reason: "t", evidence: [tx], decidedBy: "code",
@@ -26,19 +31,21 @@ function memoryStore(): CaseStore {
   return { save: (r) => void m.set(r.id, structuredClone(r)), get: (id) => m.get(id), list: () => [...m.values()] };
 }
 
-interface Harness { base: string; close: () => Promise<void>; calls: { publish: number; execute: number; feeRefund: { payer: string; amount: bigint; caseId: string }[]; ran: number } }
+interface Harness { base: string; close: () => Promise<void>; calls: { publish: number; execute: number; feeRefund: { payer: string; amount: bigint; caseId: string }[]; ran: number; sellers: string[]; publishedFor: string[] } }
 
 async function start(rulings: Ruling[], over: Partial<CourtAppDeps> = {}, refundFee = true): Promise<Harness> {
-  const calls: Harness["calls"] = { publish: 0, execute: 0, feeRefund: [], ran: 0 };
+  const calls: Harness["calls"] = { publish: 0, execute: 0, feeRefund: [], ran: 0, sellers: [], publishedFor: [] };
   const app = createCourtApp({
     x402: null,
+    sellers: SELLERS,
     runCase: async (input: CaseInput) => {
       calls.ran++;
+      calls.sellers.push(input.seller);
       return { id: input.id, claims: [], findings: [], rulings, refundFee, summary: "s", evidence: {} };
     },
     store: memoryStore(),
     remedy: {
-      publish: async (rs) => { calls.publish++; return rs.filter((r) => r.verdict === "REFUND").map((r) => ({ tx: r.tx, status: "published" as const, hash: "0xpub" })); },
+      publish: async (rs, _payerOf, seller) => { calls.publish++; calls.publishedFor.push(seller); return rs.filter((r) => r.verdict === "REFUND").map((r) => ({ tx: r.tx, status: "published" as const, hash: "0xpub" })); },
       execute: async (txs) => { calls.execute++; return txs.map((tx) => ({ tx, status: "paid" as const, hash: "0xpaid" })); },
     },
     feeRefund: async (payer, amount, caseId) => { calls.feeRefund.push({ payer, amount, caseId }); return { hash: "0xfeerefund" }; },
@@ -94,7 +101,7 @@ test("happy path: 202 then DECIDED", async () => {
     assert.equal(c.status, "DECIDED");
     assert.equal(c.rulings[0].refund, AMOUNT.toString() as never); // bigint travels as a decimal string
     const list = (await (await fetch(h.base + "/cases")).json()) as { id: string; status: string; counts: Record<string, number> }[];
-    assert.deepEqual(list, [{ id, status: "DECIDED", counts: { REFUND: 1, REJECT: 0, ESCALATE: 0 } }]);
+    assert.deepEqual(list, [{ id, status: "DECIDED", counts: { REFUND: 1, REJECT: 0, ESCALATE: 0 }, seller: DATA_CO.address, sellerName: "DataCo" }]);
     assert.equal((await fetch(h.base + "/cases/nope")).status, 404);
   } finally { await h.close(); }
 });
@@ -350,5 +357,100 @@ test("the complaint is stored on the case and returned by GET /cases/:id", async
     const id = await file(h, { complaint: "price was wrong <b>x</b>", payer: PAYER, txs: [TX1] });
     const c = await (await fetch(`${h.base}/cases/${id}`)).json() as { complaint: string };
     assert.equal(c.complaint, "price was wrong <b>x</b>");
+  } finally { await h.close(); }
+});
+
+// ----- multiple sellers -----
+
+const claim = (id: string, tx: string) => ({ id, tx, code: "A13.3" as const });
+const refundOf = (claimId: string, tx: string, amount: bigint): Ruling => ({ ...ruling(claimId, tx, "REFUND"), refund: amount });
+
+const storedCase = (over: Partial<StoredCase> & { id: string }): StoredCase => ({
+  claims: [], findings: [], rulings: [], refundFee: false, summary: "", evidence: {},
+  status: "DECIDED", seller: DATA_CO.address, sellerName: DATA_CO.name,
+  payer: PAYER, complaint: "x", txs: [TX1], feeTx: null, feeRefundTx: null, feeRefundError: null,
+  approvals: [], publishResults: null, executeResults: null, error: null, createdAt: 0,
+  ...over,
+});
+
+test("a dispute stores its seller; an omitted seller defaults to the first configured seller", async () => {
+  const h = await start([ruling("claim-1", TX1, "REFUND")]);
+  try {
+    const first = await getCase(h, await file(h));
+    assert.equal(first.seller, DATA_CO.address);
+    assert.equal(first.sellerName, "DataCo");
+
+    const second = await getCase(h, await file(h, { complaint: "x", payer: PAYER, txs: [TX2], seller: SWIFT.address }));
+    assert.equal(second.seller, SWIFT.address);
+    assert.equal(second.sellerName, "Swift");
+    assert.deepEqual(h.calls.sellers, [DATA_CO.address, SWIFT.address]);
+
+    const list = (await (await fetch(h.base + "/cases")).json()) as { id: string; seller: string; sellerName: string }[];
+    const row = list.find((c) => c.id === second.id);
+    assert.equal(row?.seller, SWIFT.address);
+    assert.equal(row?.sellerName, "Swift");
+  } finally { await h.close(); }
+});
+
+test("an unknown seller is refused with 400 and the case never runs", async () => {
+  const h = await start([]);
+  try {
+    const res = await post(h, "/disputes", { complaint: "x", payer: PAYER, txs: [TX1], seller: "0x9999999999999999999999999999999999999999" }, null);
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { error: "unknown seller" });
+    assert.equal(h.calls.ran, 0);
+  } finally { await h.close(); }
+});
+
+test("publish rules against the case's own seller", async () => {
+  const h = await start([ruling("claim-1", TX1, "REFUND")]);
+  try {
+    const id = await file(h, { complaint: "x", payer: PAYER, txs: [TX1], seller: SWIFT.address });
+    await post(h, `/cases/${id}/publish`, {});
+    assert.deepEqual(h.calls.publishedFor, [SWIFT.address]);
+  } finally { await h.close(); }
+});
+
+test("GET /sellers lists the configured sellers", async () => {
+  const h = await start([]);
+  try {
+    assert.deepEqual(await (await fetch(h.base + "/sellers")).json(), [
+      { name: "DataCo", address: DATA_CO.address },
+      { name: "Swift", address: SWIFT.address },
+    ]);
+  } finally { await h.close(); }
+});
+
+test("GET /reputation aggregates only decided-and-later cases, with exact bigint sums", async () => {
+  const store = memoryStore();
+  store.save(storedCase({
+    id: "c1", seller: SWIFT.address, sellerName: "Swift", status: "DECIDED",
+    claims: [claim("claim-1", TX1), claim("claim-2", TX2)],
+    rulings: [refundOf("claim-1", TX1, 40_000_000_000_000_000n), ruling("claim-2", TX2, "REJECT")],
+  }));
+  store.save(storedCase({
+    id: "c2", seller: SWIFT.address, sellerName: "Swift", status: "PUBLISHED",
+    claims: [claim("claim-1", TX1)], rulings: [refundOf("claim-1", TX1, 10_000_000_000_000_000n)],
+  }));
+  // FAILED and RUNNING cases never count, whoever they name.
+  store.save(storedCase({ id: "c3", seller: SWIFT.address, status: "FAILED", claims: [claim("claim-1", TX1)], rulings: [refundOf("claim-1", TX1, 99n)] }));
+  store.save(storedCase({ id: "c4", seller: DATA_CO.address, status: "RUNNING", claims: [claim("claim-1", TX1)], rulings: [refundOf("claim-1", TX1, 99n)] }));
+  // AWAITING_HUMAN counts, and addresses match case-insensitively.
+  store.save(storedCase({
+    id: "c5", seller: "0x00000000000000000000000000000000000000AA", status: "AWAITING_HUMAN",
+    claims: [claim("claim-1", TX1), claim("claim-2", TX2)],
+    rulings: [ruling("claim-1", TX1, "ESCALATE"), refundOf("claim-2", TX2, 0n)],
+  }));
+  store.save(storedCase({
+    id: "c6", seller: DATA_CO.address, status: "CLOSED",
+    claims: [claim("claim-1", TX1)], rulings: [refundOf("claim-1", TX1, 20_000_000_000_000_000n)],
+  }));
+
+  const h = await start([], { store });
+  try {
+    assert.deepEqual(await (await fetch(h.base + "/reputation")).json(), [
+      { name: "DataCo", address: DATA_CO.address, cases: 2, claims: 3, upheld: 2, refunded: "0.02" },
+      { name: "Swift", address: SWIFT.address, cases: 2, claims: 3, upheld: 2, refunded: "0.05" },
+    ]);
   } finally { await h.close(); }
 });

@@ -50,9 +50,18 @@ export function canonicalRequest(method: string, path: string, query: Query): st
   return `${method} ${path}${qs ? "?" + qs : ""}`;
 }
 
-export function buildOffer(opts: { payTo: string; price: string; resource: string; acceptance: Acceptance }): Record<"GET /quote", RouteConfig> {
+/** Defaults keep the quote seller's offer unchanged; other sellers pass their own route and description. */
+export function buildOffer(opts: {
+  payTo: string;
+  price: string;
+  resource: string;
+  acceptance: Acceptance;
+  route?: string;
+  description?: string;
+}): Record<string, RouteConfig> {
+  const route = opts.route ?? "GET /quote";
   return {
-    "GET /quote": {
+    [route]: {
       accepts: {
         scheme: "exact",
         network: METAL_TESTNET,
@@ -65,7 +74,7 @@ export function buildOffer(opts: { payTo: string; price: string; resource: strin
           acceptance: opts.acceptance,
         },
       },
-      description: "One market quote",
+      description: opts.description ?? "One market quote",
     },
   };
 }

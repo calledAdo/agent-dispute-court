@@ -109,10 +109,11 @@ function docketRow(id) {
   const r = {};
   r.id = el("span", { class: "di-id" });
   r.chip = el("span", { class: "chip" });
+  r.seller = el("span", { class: "di-seller" });
   r.count = el("span", { class: "num" });
   r.when = el("span");
   r.btn = el("button", { class: "docket-item", type: "button", on: { click: () => select(id) } },
-    el("div", { class: "row" }, r.id, r.chip), el("div", { class: "di-meta row" }, r.count, r.when));
+    el("div", { class: "row" }, r.id, r.chip), el("div", { class: "di-meta row" }, r.seller, r.count, r.when));
   r.li = el("li", { "data-id": id }, r.btn);
   return r;
 }
@@ -133,6 +134,7 @@ function renderDocket() {
     r.id.textContent = shortHex(id, 10, 4);
     r.chip.className = `chip ${STATUS_TONE[c.status] ?? ""}`;
     r.chip.textContent = c.status.replace(/_/g, " ");
+    r.seller.textContent = c.sellerName ?? c.seller ?? "";
     r.count.textContent = c.status === "RUNNING" && s.claims === 0 ? "Reviewing evidence" : `${s.claims} claim${s.claims === 1 ? "" : "s"} \u00b7 ${formatUsdz(s.refund)}`;
     r.when.textContent = when(c.createdAt);
     r.btn.setAttribute("aria-current", state.selected === id ? "true" : "false");
@@ -180,6 +182,7 @@ function headerCard(c) {
     el("div", { class: "case-title" }, el("h1", { text: c.id }), chip(c.status)),
     c.error ? el("p", { class: "msg err", text: c.error }) : null,
     el("dl", { class: "facts" },
+      el("div", {}, el("dt", { text: "Seller" }), dd(el("span", { text: c.sellerName ?? "Unknown" }), c.seller ? mono(shortHex(c.seller, 8, 6)) : null)),
       el("div", {}, el("dt", { text: "Payer" }), dd(mono(shortHex(c.payer, 8, 6)), copyButton(c.payer, "Copy payer address"))),
       el("div", {}, el("dt", { text: "Filing fee transaction" }), dd(c.feeTx ? (hashLink(c.feeTx) ?? mono(c.feeTx)) : el("span", { class: "faint", text: "None recorded" }))),
       el("div", {}, el("dt", { text: "Filing fee outcome" }), dd(el("span", { class: `chip ${feeTone}`, text: fee }), c.feeRefundTx ? hashLink(c.feeRefundTx, "refund tx") : null)),

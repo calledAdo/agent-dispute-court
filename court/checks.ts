@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
+import { checkInferOutput } from "../shared/infer.ts";
 import type {
   Claim,
   Finding,
+  InferAcceptance,
+  QuoteAcceptance,
+  Receipt,
   ReferencePrice,
   Sale,
 } from "../shared/types.ts";
@@ -159,7 +163,7 @@ interface Quote {
 }
 
 function checkA13_3(claim: Claim, sale: Sale, ctx: CheckContext): Finding {
-  const { acceptance, receipt } = sale;
+  const { acceptance } = sale;
   const evidence = [sale.tx];
 
   if (acceptance === null) {
@@ -167,11 +171,37 @@ function checkA13_3(claim: Claim, sale: Sale, ctx: CheckContext): Finding {
   }
   evidence.push(`acceptance:${sale.tx}`);
 
-  if (receipt === null) {
+  if (sale.receipt === null) {
     return finding(claim, "COULD_NOT_BE_CHECKED", "receipt_missing", evidence);
   }
+  const receipt = sale.receipt;
   evidence.push(`receipt:${sale.tx}`);
 
+  return acceptance.verifier === "infer-v1"
+    ? checkInferDelivery(claim, sale, receipt, acceptance, evidence)
+    : checkQuoteDelivery(claim, sale, receipt, acceptance, ctx, evidence);
+}
+
+/** infer-v1 needs no reference price: the signed acceptance criteria alone settle the delivery. */
+function checkInferDelivery(claim: Claim, sale: Sale, receipt: Receipt, acceptance: InferAcceptance, evidence: string[]): Finding {
+  if (sha256Hex(receipt.body) !== receipt.responseHash) {
+    return finding(claim, "COULD_NOT_BE_CHECKED", "receipt_tampered", evidence);
+  }
+
+  const violation = checkInferOutput(receipt.body, sale.requestHash, acceptance);
+  return violation === null
+    ? finding(claim, "NO_DIFFERENCE_FOUND", "output_meets_acceptance", evidence)
+    : finding(claim, "DIFFERENCE_CONFIRMED", violation, evidence);
+}
+
+function checkQuoteDelivery(
+  claim: Claim,
+  sale: Sale,
+  receipt: Receipt,
+  acceptance: QuoteAcceptance,
+  ctx: CheckContext,
+  evidence: string[],
+): Finding {
   const quote = parseQuote(receipt.body);
   if (quote === null) {
     return finding(claim, "COULD_NOT_BE_CHECKED", "body_unparseable", evidence);

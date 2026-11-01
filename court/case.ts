@@ -9,6 +9,7 @@ import type { Policy, Ruling } from "./verdict.ts";
 
 export interface CaseInput {
   id: string;
+  seller: `0x${string}`;
   complaint: string;
   payer: `0x${string}`;
   txs: `0x${string}`[];
@@ -92,9 +93,9 @@ function requestedSymbol(resource: string): string | null {
   return symbol === null || symbol === "" ? null : symbol;
 }
 
-/** A failed or missing reference lookup is "unavailable", which the check reports as unchecked. */
+/** A failed or missing reference lookup is "unavailable", which the check reports as unchecked. Only quote-v1 uses a reference. */
 async function fetchReference(sale: Sale | null, deps: CaseDeps): Promise<ReferencePrice> {
-  if (sale === null) return null;
+  if (sale === null || sale.acceptance?.verifier !== "quote-v1") return null;
   const symbol = requestedSymbol(sale.resource);
   if (symbol === null) return null;
   try {

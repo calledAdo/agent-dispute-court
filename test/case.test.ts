@@ -9,6 +9,7 @@ import { createCaseStore } from "../court/store.ts";
 import type { EvidenceDeps } from "../court/evidence.ts";
 import { INTAKE_SYSTEM_PROMPT } from "../court/judge.ts";
 import { buildReceipt, sha256Hex } from "../seller/offer.ts";
+import type { Acceptance } from "../shared/types.ts";
 
 const SELLER = "0x00000000000000000000000000000000000000aa" as const;
 const PAYER = "0x00000000000000000000000000000000000000cc" as const;
@@ -16,11 +17,11 @@ const TX1 = ("0x" + "11".repeat(32)) as `0x${string}`;
 const TX2 = ("0x" + "22".repeat(32)) as `0x${string}`;
 const AMOUNT = 50000000000000000n;
 const SETTLED_MS = 1_700_000_000_000;
-const acceptance = { verifier: "quote-v1", maxStalenessMs: 60000, maxDeviationBps: 50 } as const;
+const acceptance: Acceptance = { verifier: "quote-v1", maxStalenessMs: 60000, maxDeviationBps: 50 };
 const b64 = (v: unknown) => Buffer.from(JSON.stringify(v)).toString("base64url");
 
-function signedOrder(resource: string): string {
-  const jwt = [b64({ alg: "none" }), b64({ id: SELLER, amount: String(AMOUNT), extra: { requestHash: sha256Hex(resource), acceptance } }), "sig"].join(".");
+function signedOrder(resource: string, criteria: Acceptance = acceptance): string {
+  const jwt = [b64({ alg: "none" }), b64({ id: SELLER, amount: String(AMOUNT), extra: { requestHash: sha256Hex(resource), acceptance: criteria } }), "sig"].join(".");
   return ["sdjwt", b64(["salt", { vct: "checkout", checkout_jwt: jwt, line_items: [{ id: resource }] }]), "kb"].join("~");
 }
 
@@ -75,7 +76,7 @@ function makeDeps(over: Partial<CaseDeps> & { bodies: Record<string, string> }):
   };
 }
 
-const input = (txs: `0x${string}`[]): CaseInput => ({ id: "case-1", complaint: "bad quotes", payer: PAYER, txs });
+const input = (txs: `0x${string}`[]): CaseInput => ({ id: "case-1", seller: SELLER, complaint: "bad quotes", payer: PAYER, txs });
 
 test("full case with a stubbed model: code decides A14, model settles unchecked A13.3", async () => {
   const { calls, model } = stubModel(
@@ -208,4 +209,25 @@ test("the judge receives the delivered body, status, hash and signed request", a
   assert.deepEqual(Object.keys(receipt).sort(), ["anchored", "body", "responseHash", "settledAt", "status"]);
   assert.equal(receipt.settledAt, new Date(SETTLED_MS).toISOString());
   assert.deepEqual((receipt.body as { price: number }).price, 123.45);
+});
+
+test("an infer-v1 sale is checked without any reference lookup", async () => {
+  const resource = "GET /infer?task=summary-v1&text=hi";
+  const criteria: Acceptance = { verifier: "infer-v1", task: "summary-v1", maxChars: 20, maxKeywords: 2 };
+  const body = JSON.stringify({ task: "summary-v1", requestHash: sha256Hex(resource), summary: "ok", keywords: ["a"] });
+  const receipt = buildReceipt({
+    tx: TX1, payer: PAYER, amount: "0.05", resource, requestHash: sha256Hex(resource),
+    status: 200, body, signedOrder: signedOrder(resource, criteria), settledAt: 1,
+  });
+  let referenceCalls = 0;
+  const deps = makeDeps({
+    bodies: {},
+    evidence: { ...evidenceDeps({}), receipts: [receipt] },
+    reference: async (symbol, at) => { referenceCalls++; return { symbol, price: 100, at }; },
+  });
+
+  const result = await runCase(input([TX1]), deps);
+  assert.equal(referenceCalls, 0);
+  assert.equal(result.findings[0].state, "NO_DIFFERENCE_FOUND");
+  assert.equal(result.findings[0].reason, "output_meets_acceptance");
 });

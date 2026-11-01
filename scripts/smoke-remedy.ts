@@ -11,8 +11,8 @@ const { abi } = JSON.parse(fs.readFileSync("contracts/build/CourtVault.json", "u
 const deps = { publicClient, walletClient, vault: process.env.COURT_VAULT as `0x${string}`, vaultAbi: abi, seller: process.env.SELLER as `0x${string}`, evidenceRoot: () => keccak256(toHex("smoke-evidence")) } as any;
 const tx = process.env.TX!, payer = process.env.PAYER as `0x${string}`;
 const ruling = { claimId: "c1", tx, code: "A13.3", verdict: "REFUND", liable: "SELLER", refund: parseUnits("0.05", 18), proposedRefund: parseUnits("0.05", 18), reason: "stale_quote", evidence: [tx], decidedBy: "code" };
-console.log("publish #1:", JSON.stringify(await publishRulings([ruling as any], () => payer, deps)));
-console.log("publish #2:", JSON.stringify(await publishRulings([ruling as any], () => payer, deps)));
+console.log("publish #1:", JSON.stringify(await publishRulings([ruling as any], () => payer, process.env.SELLER as `0x${string}`, deps)));
+console.log("publish #2:", JSON.stringify(await publishRulings([ruling as any], () => payer, process.env.SELLER as `0x${string}`, deps)));
 console.log("execute early:", JSON.stringify(await executeDue([tx], deps)));
 await new Promise((r) => setTimeout(r, 25000));
 console.log("execute after window:", JSON.stringify(await executeDue([tx], deps)));

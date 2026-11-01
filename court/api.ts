@@ -2,10 +2,12 @@ import express from "express";
 import type { Express, NextFunction, Request, RequestHandler, Response } from "express";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { formatUnits } from "viem";
 import { x402HTTPResourceServer } from "@x402/core/server";
 import type { x402ResourceServer } from "@x402/core/server";
 import { paymentMiddlewareFromHTTPServer } from "@x402/express";
 import type { CaseInput, CaseResult } from "./case.ts";
+import type { SellerConfig } from "./sellers.ts";
 import type { CaseStore } from "./store.ts";
 import type { ExecuteOutcome, PublishOutcome } from "./remedy.ts";
 import { settleFilingFee } from "./verdict.ts";
@@ -24,6 +26,8 @@ export interface Approval {
 /** What the store holds: the court's CaseResult plus the API's bookkeeping. */
 export interface StoredCase extends CaseResult {
   status: CaseStatus;
+  seller: `0x${string}`;
+  sellerName: string;
   payer: string;
   complaint: string;
   txs: string[];
@@ -40,10 +44,12 @@ export interface StoredCase extends CaseResult {
 export interface CourtAppDeps {
   /** null = no payment gate (tests); `payer` then comes from the body. */
   x402: { server: x402ResourceServer; routes: unknown; gate?: RequestHandler } | null;
+  /** Every seller this court instance serves; the first is the default for an unfiled seller. */
+  sellers: readonly SellerConfig[];
   runCase: (input: CaseInput) => Promise<CaseResult>;
   store: CaseStore;
   remedy: {
-    publish: (rulings: Ruling[], payerOf: (tx: string) => `0x${string}`) => Promise<PublishOutcome[]>;
+    publish: (rulings: Ruling[], payerOf: (tx: string) => `0x${string}`, seller: `0x${string}`) => Promise<PublishOutcome[]>;
     execute: (txs: string[]) => Promise<ExecuteOutcome[]>;
   };
   feeRefund: (payer: string, amount: bigint, caseId: string) => Promise<{ hash: string }>;
@@ -70,8 +76,15 @@ const cleanReason = <T extends { reason?: string }>(o: T): T => (o.reason === un
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** Resolves the body's optional seller, defaulting to the first configured one. null = unknown. */
+function resolveSeller(given: unknown, sellers: readonly SellerConfig[]): SellerConfig | null {
+  if (given === undefined) return sellers[0] ?? null;
+  if (typeof given !== "string") return null;
+  return sellers.find((s) => same(s.address, given)) ?? null;
+}
+
 /** Hand-written validation. Returns the input (without an id) or the reason it is invalid. */
-export function validateDispute(body: unknown): { ok: true; value: Omit<CaseInput, "id"> } | { ok: false; error: string } {
+export function validateDispute(body: unknown, sellers: readonly SellerConfig[]): { ok: true; value: Omit<CaseInput, "id"> } | { ok: false; error: string } {
   if (!isRecord(body)) return { ok: false, error: "body must be a JSON object" };
   const { complaint, payer, txs, buyerOrders } = body;
   if (typeof complaint !== "string" || complaint.trim() === "" || complaint.length > MAX_COMPLAINT) return { ok: false, error: "complaint must be a non-empty string" };
@@ -79,6 +92,8 @@ export function validateDispute(body: unknown): { ok: true; value: Omit<CaseInpu
   if (!Array.isArray(txs) || txs.length === 0 || txs.length > MAX_TXS) return { ok: false, error: `txs must be a list of 1 to ${MAX_TXS} transaction hashes` };
   if (!txs.every((t) => typeof t === "string" && TX_HASH.test(t))) return { ok: false, error: "every tx must be a 0x 32-byte hash" };
   if (new Set(txs.map((t: string) => t.toLowerCase())).size !== txs.length) return { ok: false, error: "txs must not repeat" };
+  const seller = resolveSeller(body.seller, sellers);
+  if (seller === null) return { ok: false, error: "unknown seller" };
   let orders: Record<string, string> | undefined;
   if (buyerOrders !== undefined) {
     if (!isRecord(buyerOrders)) return { ok: false, error: "buyerOrders must be an object" };
@@ -87,7 +102,7 @@ export function validateDispute(body: unknown): { ok: true; value: Omit<CaseInpu
     }
     orders = buyerOrders as Record<string, string>;
   }
-  const value: Omit<CaseInput, "id"> = { complaint, payer: payer as `0x${string}`, txs: txs as `0x${string}`[] };
+  const value: Omit<CaseInput, "id"> = { seller: seller.address, complaint, payer: payer as `0x${string}`, txs: txs as `0x${string}`[] };
   if (orders !== undefined) value.buyerOrders = orders;
   return { ok: true, value };
 }
@@ -109,6 +124,7 @@ export function createCourtApp(deps: CourtAppDeps): Express {
   const { store, now } = deps;
   const stored = (id: string) => store.get(id) as StoredCase | undefined;
   const save = (c: StoredCase) => store.save(c);
+  const sellerNameOf = (address: string) => deps.sellers.find((s) => same(s.address, address))?.name ?? address;
 
   // Cases accepted by the route handler but not yet settled on chain.
   const pending = new Map<string, { input: CaseInput; at: number }>();
@@ -118,7 +134,8 @@ export function createCourtApp(deps: CourtAppDeps): Express {
   function startCase(input: CaseInput, feeTx: string | null): void {
     save({
       id: input.id, claims: [], findings: [], rulings: [], refundFee: false, summary: "", evidence: {},
-      status: "RUNNING", payer: input.payer, complaint: input.complaint, txs: [...input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
+      status: "RUNNING", seller: input.seller, sellerName: sellerNameOf(input.seller), payer: input.payer,
+      complaint: input.complaint, txs: [...input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
       approvals: [], publishResults: null, executeResults: null, error: null, createdAt: now(),
     });
     // Asynchronous on purpose: the caller already has its 202.
@@ -142,7 +159,8 @@ export function createCourtApp(deps: CourtAppDeps): Express {
     // Someone else paid for this filing: keep the case on record but never run it.
     save({
       id: entry.input.id, claims: [], findings: [], rulings: [], refundFee: false, summary: "", evidence: {},
-      status: "FILER_MISMATCH", payer: entry.input.payer, complaint: entry.input.complaint, txs: [...entry.input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
+      status: "FILER_MISMATCH", seller: entry.input.seller, sellerName: sellerNameOf(entry.input.seller),
+      payer: entry.input.payer, complaint: entry.input.complaint, txs: [...entry.input.txs], feeTx, feeRefundTx: null, feeRefundError: null,
       approvals: [], publishResults: null, executeResults: null,
       error: `settled payer ${settledPayer ?? "unknown"} does not match body payer`, createdAt: now(),
     });
@@ -164,7 +182,7 @@ export function createCourtApp(deps: CourtAppDeps): Express {
 
   // ----- POST /disputes: validate first, so an invalid body is never charged -----
   app.post("/disputes", (req: Request, res: Response, next: NextFunction) => {
-    const v = validateDispute(req.body);
+    const v = validateDispute(req.body, deps.sellers);
     if (!v.ok) {
       res.status(400).json({ error: v.error });
       return;
@@ -227,7 +245,7 @@ export function createCourtApp(deps: CourtAppDeps): Express {
       const s = c as StoredCase;
       const counts = { REFUND: 0, REJECT: 0, ESCALATE: 0 };
       for (const r of s.rulings) counts[r.verdict]++;
-      return { id: s.id, status: s.status, counts };
+      return { id: s.id, status: s.status, counts, seller: s.seller, sellerName: s.sellerName };
     }));
   });
 
@@ -235,6 +253,33 @@ export function createCourtApp(deps: CourtAppDeps): Express {
     const c = stored(String(req.params.id));
     if (c === undefined) return void send(res, 404, { error: "case not found" });
     send(res, 200, c);
+  });
+
+  app.get("/sellers", (_req, res) => {
+    send(res, 200, deps.sellers.map((s) => ({ name: s.name, address: s.address })));
+  });
+
+  // Reputation the sourcing agent routes by: only decided-and-later cases count, and refunds are exact bigint sums.
+  app.get("/reputation", (_req, res) => {
+    const counted: ReadonlySet<CaseStatus> = new Set(["DECIDED", "AWAITING_HUMAN", "PUBLISHED", "CLOSED"]);
+    const cases = store.list() as StoredCase[];
+    send(res, 200, deps.sellers.map((seller) => {
+      let sellerCases = 0;
+      let claims = 0;
+      let upheld = 0;
+      let refunded = 0n;
+      for (const c of cases) {
+        if (c.seller === undefined || !same(c.seller, seller.address) || !counted.has(c.status)) continue;
+        sellerCases++;
+        claims += c.claims.length;
+        for (const r of c.rulings) {
+          if (r.verdict !== "REFUND") continue;
+          upheld++;
+          refunded += r.refund;
+        }
+      }
+      return { name: seller.name, address: seller.address, cases: sellerCases, claims, upheld, refunded: formatUnits(refunded, 18) };
+    }));
   });
 
   // ----- operator routes -----
@@ -289,7 +334,7 @@ export function createCourtApp(deps: CourtAppDeps): Express {
   app.post("/cases/:id/publish", operator, exclusive(async (c, _req, res) => {
     if (c.status === "PUBLISHED" || c.status === "CLOSED") return void send(res, 200, c); // idempotent
     if (c.status !== "DECIDED") return void res.status(409).json({ error: `cannot publish a case in status ${c.status}` });
-    const outcomes = (await deps.remedy.publish(c.rulings, () => c.payer as `0x${string}`)).map(cleanReason);
+    const outcomes = (await deps.remedy.publish(c.rulings, () => c.payer as `0x${string}`, c.seller ?? deps.sellers[0].address)).map(cleanReason);
     // A failed publish leaves the case DECIDED so the operator can retry; the remedy skips rulings already on chain.
     const failed = outcomes.some((o) => o.status === "failed");
     const updated: StoredCase = { ...c, publishResults: outcomes, status: failed ? "DECIDED" : "PUBLISHED" };

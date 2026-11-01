@@ -38,7 +38,6 @@ function makeDeps(stub: Stub = {}) {
     walletClient: { account: { address: "0x1" }, writeContract: async (req: any) => { log.push("write"); writes.push(req); return "0xhash"; } },
     vault: VAULT,
     vaultAbi: [],
-    seller: SELLER,
     evidenceRoot: () => ROOT,
   } as unknown as RemedyDeps;
   return { deps, sims, writes, log };
@@ -49,6 +48,7 @@ test("publish sends only REFUND rulings with refund > 0, with Metal gas", async 
   const out = await publishRulings(
     [ruling({}), ruling({ tx: tx(2), verdict: "REJECT", refund: 0n }), ruling({ tx: tx(3), verdict: "ESCALATE", refund: 0n }), ruling({ tx: tx(4), refund: 0n })],
     () => PAYER,
+    SELLER,
     deps,
   );
   assert.deepEqual(out, [
@@ -70,21 +70,21 @@ test("publish sends only REFUND rulings with refund > 0, with Metal gas", async 
 
 test("publish is idempotent: an existing ruling sends nothing", async () => {
   const { deps, sims, writes } = makeDeps({ states: { [tx(1)]: [0n, 1], [tx(2)]: [0n, 2] } });
-  const out = await publishRulings([ruling({}), ruling({ tx: tx(2) })], () => PAYER, deps);
+  const out = await publishRulings([ruling({}), ruling({ tx: tx(2) })], () => PAYER, SELLER, deps);
   assert.deepEqual(out.map((o) => o.status), ["already_ruled", "already_ruled"]);
   assert.equal(sims.length + writes.length, 0);
 });
 
 test("two refund rulings for one payment publish once", async () => {
   const { deps, writes } = makeDeps();
-  const out = await publishRulings([ruling({}), ruling({ claimId: "claim-2" })], () => PAYER, deps);
+  const out = await publishRulings([ruling({}), ruling({ claimId: "claim-2" })], () => PAYER, SELLER, deps);
   assert.deepEqual(out.map((o) => o.status), ["published", "already_ruled"]);
   assert.equal(writes.length, 1);
 });
 
 test("publish revert becomes failed with its reason and the loop continues", async () => {
   const { deps, writes } = makeDeps({ revert: "refund above cap" });
-  const out = await publishRulings([ruling({}), ruling({ tx: tx(2) })], () => PAYER, deps);
+  const out = await publishRulings([ruling({}), ruling({ tx: tx(2) })], () => PAYER, SELLER, deps);
   assert.deepEqual(out.map((o) => [o.status, o.reason]), [["failed", "refund above cap"], ["failed", "refund above cap"]]);
   assert.equal(writes.length, 0);
 });
@@ -128,7 +128,7 @@ test("executeDue survives an rpc error on read", async () => {
 
 test("a reverted receipt becomes failed with reverted_onchain", async () => {
   const { deps } = makeDeps({ receiptStatus: "reverted", states: { [tx(2)]: [0n, 1] } });
-  const pub = await publishRulings([ruling({})], () => PAYER, deps);
+  const pub = await publishRulings([ruling({})], () => PAYER, SELLER, deps);
   assert.deepEqual(pub, [{ tx: tx(1), status: "failed", reason: "reverted_onchain" }]);
   const ex = await executeDue([tx(2)], deps);
   assert.deepEqual(ex, [{ tx: tx(2), status: "failed", reason: "reverted_onchain" }]);
@@ -136,6 +136,6 @@ test("a reverted receipt becomes failed with reverted_onchain", async () => {
 
 test("writes are sequential: each is confirmed before the next is sent", async () => {
   const { deps, log } = makeDeps();
-  await publishRulings([ruling({}), ruling({ tx: tx(2) })], () => PAYER, deps);
+  await publishRulings([ruling({}), ruling({ tx: tx(2) })], () => PAYER, SELLER, deps);
   assert.deepEqual(log, ["write", "wait:0xhash", "write", "wait:0xhash"]);
 });

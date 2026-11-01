@@ -9,6 +9,7 @@ async function withServer(fn: (base: string) => Promise<void>) {
   const m = new Map();
   const app = createCourtApp({
     x402: null, runCase: async (i) => ({ id: i.id, claims: [], findings: [], rulings: [], refundFee: false, summary: "", evidence: {} }),
+    sellers: [{ name: "DataCo", address: "0x00000000000000000000000000000000000000aa", receipts: "data/co.jsonl", priceList: { "GET /quote": "0.05" } }],
     store: { save: (r) => void m.set(r.id, r), get: (id) => m.get(id), list: () => [...m.values()] },
     remedy: { publish: async () => [], execute: async () => [] }, feeRefund: async () => ({ hash: "0x" }),
     policy, operatorToken: "t", now: () => 0,

@@ -429,3 +429,60 @@ test("A14 cannot check a route missing from the price list", () => {
   assert.equal(finding.state, "COULD_NOT_BE_CHECKED");
   assert.equal(finding.reason, "route_not_in_price_list");
 });
+
+// A13.3 on an infer-v1 sale: the signed delivery standard decides, and no reference is used.
+
+const INFER_RESOURCE = "GET /infer?task=summary-v1&text=what+changed";
+const INFER_ACCEPTANCE: Acceptance = { verifier: "infer-v1", task: "summary-v1", maxChars: 20, maxKeywords: 2 };
+
+function inferBody(over: Record<string, unknown> = {}): string {
+  return JSON.stringify({ task: "summary-v1", requestHash: sha256Hex(INFER_RESOURCE), summary: "short summary", keywords: ["a"], ...over });
+}
+
+function inferSale(body: string = inferBody(), overrides: Partial<Sale> = {}): Sale {
+  return makeSale({
+    resource: INFER_RESOURCE,
+    requestHash: sha256Hex(INFER_RESOURCE),
+    acceptance: INFER_ACCEPTANCE,
+    receipt: receiptFor(body),
+    ...overrides,
+  });
+}
+
+test("A13.3 infer-v1 finds no difference when the output meets the signed standard", () => {
+  const finding = checkClaim(claimFor("A13.3"), makeCtx({ sale: inferSale(), reference: null }));
+  assert.equal(finding.state, "NO_DIFFERENCE_FOUND");
+  assert.equal(finding.reason, "output_meets_acceptance");
+  assert.deepEqual(finding.evidence, [TX, `acceptance:${TX}`, `receipt:${TX}`]);
+});
+
+const INFER_VIOLATIONS: [string, string][] = [
+  ["body_unparseable", "not json"],
+  ["wrong_task", inferBody({ task: "translate-v1" })],
+  ["wrong_request", inferBody({ requestHash: sha256Hex("GET /infer?task=summary-v1&text=other") })],
+  ["empty_summary", inferBody({ summary: "   " })],
+  ["summary_too_long", inferBody({ summary: "x".repeat(21) })],
+  ["bad_keywords", inferBody({ keywords: [] })],
+];
+
+for (const [violation, body] of INFER_VIOLATIONS) {
+  test(`A13.3 infer-v1 confirms ${violation}`, () => {
+    const finding = checkClaim(claimFor("A13.3"), makeCtx({ sale: inferSale(body), reference: null }));
+    assert.equal(finding.state, "DIFFERENCE_CONFIRMED");
+    assert.equal(finding.reason, violation);
+  });
+}
+
+test("A13.3 infer-v1 cannot check a body edited after hashing", () => {
+  const receipt = receiptFor(inferBody());
+  receipt.body = inferBody({ summary: "edited later" });
+  const finding = checkClaim(claimFor("A13.3"), makeCtx({ sale: inferSale(inferBody(), { receipt }), reference: null }));
+  assert.equal(finding.state, "COULD_NOT_BE_CHECKED");
+  assert.equal(finding.reason, "receipt_tampered");
+});
+
+test("A13.3 infer-v1 cannot check without a receipt", () => {
+  const finding = checkClaim(claimFor("A13.3"), makeCtx({ sale: inferSale(inferBody(), { receipt: null }), reference: null }));
+  assert.equal(finding.state, "COULD_NOT_BE_CHECKED");
+  assert.equal(finding.reason, "receipt_missing");
+});

@@ -6,7 +6,6 @@ export interface RemedyDeps {
   walletClient: WalletClient;
   vault: `0x${string}`;
   vaultAbi: Abi;
-  seller: `0x${string}`;
   evidenceRoot: (r: Ruling) => `0x${string}`;
 }
 
@@ -50,6 +49,7 @@ async function write(functionName: string, args: unknown[], deps: RemedyDeps): P
 export async function publishRulings(
   rulings: Ruling[],
   payerOf: (tx: string) => `0x${string}`,
+  seller: `0x${string}`,
   deps: RemedyDeps,
 ): Promise<PublishOutcome[]> {
   const out: PublishOutcome[] = [];
@@ -74,7 +74,7 @@ export async function publishRulings(
       }
       const hash = await write(
         "rule",
-        [tx, deps.seller, payerOf(tx), ruling.refund, ruling.code, deps.evidenceRoot(ruling)],
+        [tx, seller, payerOf(tx), ruling.refund, ruling.code, deps.evidenceRoot(ruling)],
         deps,
       );
       out.push({ tx, status: "published", hash });

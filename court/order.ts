@@ -1,3 +1,4 @@
+import { readInferAcceptance } from "../shared/infer.ts";
 import type { Acceptance } from "../shared/types.ts";
 
 export interface DecodedOrder {
@@ -14,8 +15,10 @@ function segment(s: string): unknown {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
-function readAcceptance(v: unknown): Acceptance | null {
-  if (!isObject(v) || v.verifier !== "quote-v1") return null;
+export function readAcceptance(v: unknown): Acceptance | null {
+  if (!isObject(v)) return null;
+  if (v.verifier === "infer-v1") return readInferAcceptance(v);
+  if (v.verifier !== "quote-v1") return null;
   if (typeof v.maxStalenessMs !== "number" || typeof v.maxDeviationBps !== "number") return null;
   return { verifier: "quote-v1", maxStalenessMs: v.maxStalenessMs, maxDeviationBps: v.maxDeviationBps };
 }
