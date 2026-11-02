@@ -1,0 +1,11 @@
+{
+  "name": "@dispute-court/protocol",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "viem": "2.57.13"
+  }
+}

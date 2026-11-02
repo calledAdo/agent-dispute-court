@@ -1,0 +1,11 @@
+{
+  "name": "@dispute-court/contracts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "node scripts/compile.ts"
+  },
+  "devDependencies": {
+    "solc": "0.8.28"
+  }
+}

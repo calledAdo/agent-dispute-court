@@ -1,0 +1,16 @@
+{
+  "name": "@dispute-court/seller",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@dispute-court/protocol": "*",
+    "@metalntwx/metal-pay": "0.3.3",
+    "@x402/core": "2.28.0",
+    "@x402/express": "2.28.0",
+    "express": "5.3.0",
+    "viem": "2.57.13"
+  }
+}

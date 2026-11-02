@@ -1,0 +1,11 @@
+import { TreasuryAirwallexClient } from "@dispute-court/example-dataco";
+const c = new TreasuryAirwallexClient({ clientId: process.env.AWX_CLIENT_ID!, apiKey: process.env.AWX_API_KEY! } as any);
+const tryit = async (label: string, f: () => Promise<unknown>) => { try { const r = await f(); console.log("OK  ", label, JSON.stringify(r).slice(0, 220)); return r as any; } catch (e) { console.log("FAIL", label, String((e as Error).message).slice(0, 260)); return null; } };
+const gas = await tryit("listGlobalAccounts", () => (c as any).listGlobalAccounts());
+const usd = (gas?.items ?? gas ?? []).find?.((g: any) => g.currency === "USD" || g.required_features?.[0]?.currency === "USD" || g.supported_features?.some?.((f: any) => f.currency === "USD"));
+console.log("usd global account:", usd?.id);
+if (usd) await tryit("simulateDeposit", () => (c as any).simulateDeposit({ global_account_id: usd.id, amount: 1.25, reference: "0xsmoke" + Date.now() }));
+await tryit("getBalances", () => (c as any).getBalances());
+const q = await tryit("fxQuote", () => (c as any).fxQuote({ sell_currency: "USD", buy_currency: "EUR", buy_amount: 62.85 }));
+await tryit("fxConvert", () => (c as any).fxConvert({ quote_id: q?.quote_id ?? q?.id, sell_currency: "USD", buy_currency: "EUR", buy_amount: 62.85 }));
+await tryit("beneficiarySchema", () => (c as any).beneficiarySchema({ bank_country_code: "DE", account_currency: "EUR", entity_type: "COMPANY", transfer_method: "SWIFT" }));

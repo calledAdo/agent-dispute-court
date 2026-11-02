@@ -1,0 +1,12 @@
+{
+  "name": "@dispute-court/buyer",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@dispute-court/protocol": "*",
+    "@dispute-court/seller": "*"
+  }
+}

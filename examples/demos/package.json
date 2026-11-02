@@ -1,0 +1,14 @@
+{
+  "name": "@dispute-court/demos",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "@dispute-court/buyer": "*",
+    "@dispute-court/court": "*",
+    "@dispute-court/example-dataco": "*",
+    "@dispute-court/protocol": "*",
+    "@dispute-court/seller": "*",
+    "viem": "2.57.13"
+  }
+}

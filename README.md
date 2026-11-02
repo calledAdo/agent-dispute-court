@@ -98,7 +98,7 @@ The agent pays under its own Metal mandate: at most 0.06 per payment and 3 in to
 
 **Result:** 6 of 6 documents done, 0.21 *USDZ spent, 0.03 recovered, no human involved. The broken delivery cost the agent nothing, and it cost Sterling future business.
 
-The provider, the agent and the court all check deliveries with **the same pure function** ([`shared/infer.ts`](shared/infer.ts)), so they cannot disagree about what was promised.
+The provider, the agent and the court all check deliveries with **the same pure function** ([`packages/protocol/src/infer.ts`](packages/protocol/src/infer.ts)), so they cannot disagree about what was promised.
 
 ### Case 2, the hard one: a messy complaint
 
@@ -133,7 +133,7 @@ Operators follow every case in the console (`/console/`). It shows each claim's 
 
 The court is only useful if sellers can trust it with their reserve.
 
-- **Its power over reserves is narrow.** `CourtVault` releases money only through a published ruling: at most `maxRefund`, once per payment, and only after the objection window. During that window the seller can object, which blocks execution. The court only rules on payments whose on-chain payer is the filer, and the filer is whoever paid the filing bond, so a refund can only go back to the agent that paid. See [`contracts/CourtVault.sol`](contracts/CourtVault.sol).
+- **Its power over reserves is narrow.** `CourtVault` releases money only through a published ruling: at most `maxRefund`, once per payment, and only after the objection window. During that window the seller can object, which blocks execution. The court only rules on payments whose on-chain payer is the filer, and the filer is whoever paid the filing bond, so a refund can only go back to the agent that paid. See [`packages/contracts/contracts/CourtVault.sol`](packages/contracts/contracts/CourtVault.sol).
 - **Code owns facts.** The model never decides a signature, amount, duplicate or delivery-standard question, and its output is schema-validated.
 - **No unchecked claim looks rejected.** There are three states, and the unchecked one carries its reason.
 - **Approvals are bound to the amount shown.** A human approval must restate the exact refund amount, or it is refused (409).
@@ -159,7 +159,7 @@ The court is only useful if sellers can trust it with their reserve.
 
 | Proposal | What it asks for | Where it lives here |
 |---|---|---|
-| [#3500](https://github.com/x402-foundation/x402/issues/3500): dispute evidence | An evidence triple: authorization scope, the action, and a delta a resolver can check mechanically | **Scope** = the Metal mandate, bound on chain. **Action** = the settled payment plus the agent's signed order. **Delta** = computed by [`court/checks.ts`](court/checks.ts), never asserted by a party |
+| [#3500](https://github.com/x402-foundation/x402/issues/3500): dispute evidence | An evidence triple: authorization scope, the action, and a delta a resolver can check mechanically | **Scope** = the Metal mandate, bound on chain. **Action** = the settled payment plus the agent's signed order. **Delta** = computed by [`apps/court/src/checks.ts`](apps/court/src/checks.ts), never asserted by a party |
 | [#3678](https://github.com/x402-foundation/x402/issues/3678): delivery conformance | Acceptance criteria in the offer; the receipt carries the delivered body's hash; a resolver re-runs a named verifier | `extra.acceptance` (`quote-v1` or `infer-v1`) is **signed by the buyer's agent**. Receipts store `responseHash`, anchored on `CourtLedger`. `A13.3` re-runs the verifier |
 | [#3945](https://github.com/x402-foundation/x402/issues/3945): three states | `DIFFERENCE_CONFIRMED` / `NO_DIFFERENCE_FOUND` / `COULD_NOT_BE_CHECKED` | Exactly these, each with a reason |
 | The recovery gap from #3500 | Remedies on a push rail | **What this project adds:** `CourtVault` plus MIP20 holds give enforced recovery from a seller's reserve |
@@ -193,15 +193,15 @@ The court is only useful if sellers can trust it with their reserve.
 
 ```mermaid
 flowchart LR
-  B["Buyer agents<br/>sourcing agent: agents/<br/>customer agent"]
-  S["Bonded sellers (x402)<br/>Swift · Sterling · Summit: providers/<br/>DataCo quotes: seller/"]
-  subgraph Court["Agent Dispute Court · court/"]
+  B["Buyer agents<br/>sourcing agent: packages/buyer/src/<br/>customer agent"]
+  S["Bonded sellers (x402)<br/>Swift · Sterling · Summit: examples/inference-providers/<br/>DataCo quotes: examples/dataco/"]
+  subgraph Court["Agent Dispute Court · apps/court/"]
     direction TB
     API["API + x402 filing bond<br/>/disputes · /cases · /reputation"]
     EV["Evidence<br/>rebuilt from the chain only"]
     CK["Checks: code, 3 states"]
     J["Claude clerk + judge"]
-    H["Human approval<br/>console/"]
+    H["Human approval<br/>apps/court/console/"]
     API --> EV --> CK --> J --> H
   end
   subgraph Metal["Metal testnet"]
@@ -227,16 +227,16 @@ flowchart LR
 
 | Capability | Technology | Code |
 |---|---|---|
-| Buyers sign the exact request and the delivery standard | Metal signed orders and mandates | [`seller/offer.ts`](seller/offer.ts), [`court/order.ts`](court/order.ts) |
-| Every claim rebuilt from the chain | Metal `verifyMandatePayment`, `CourtLedger` Merkle proofs | [`court/evidence.ts`](court/evidence.ts) |
-| Seller reserves and enforced refunds | Metal MIP20 holds, `CourtVault` | [`contracts/CourtVault.sol`](contracts/CourtVault.sol), [`court/remedy.ts`](court/remedy.ts) |
-| Filing bond and paid inference | x402 (`@x402/core`, `@x402/express`) on Metal | [`court/api.ts`](court/api.ts), [`providers/server.ts`](providers/server.ts) |
-| Spending limits per agent; refusal on a price jump | Metal mandates, `metal-agent` | [`agents/cli.ts`](agents/cli.ts), [`agents/mandates.ts`](agents/mandates.ts) |
-| Complaint intake, residual quality judgment | Claude structured outputs | [`court/judge.ts`](court/judge.ts) |
-| Inference providers | Claude Haiku, Sonnet and Opus | [`providers/server.ts`](providers/server.ts) |
-| Card chargebacks: challenge, accept, escalate | Airwallex payment disputes and files | [`card/`](card/) |
-| Earnings settlement, FX, supplier payout | Airwallex deposits, conversions, beneficiaries, SWIFT | [`treasury/`](treasury/) |
-| Routing by court reputation | `GET /reputation` | [`agents/router.ts`](agents/router.ts) |
+| Buyers sign the exact request and the delivery standard | Metal signed orders and mandates | [`packages/seller/src/offer.ts`](packages/seller/src/offer.ts), [`apps/court/src/order.ts`](apps/court/src/order.ts) |
+| Every claim rebuilt from the chain | Metal `verifyMandatePayment`, `CourtLedger` Merkle proofs | [`apps/court/src/evidence.ts`](apps/court/src/evidence.ts) |
+| Seller reserves and enforced refunds | Metal MIP20 holds, `CourtVault` | [`packages/contracts/contracts/CourtVault.sol`](packages/contracts/contracts/CourtVault.sol), [`apps/court/src/remedy.ts`](apps/court/src/remedy.ts) |
+| Filing bond and paid inference | x402 (`@x402/core`, `@x402/express`) on Metal | [`apps/court/src/api.ts`](apps/court/src/api.ts), [`examples/inference-providers/server.ts`](examples/inference-providers/server.ts) |
+| Spending limits per agent; refusal on a price jump | Metal mandates, `metal-agent` | [`packages/buyer/src/cli.ts`](packages/buyer/src/cli.ts), [`examples/dataco/mandates.ts`](examples/dataco/mandates.ts) |
+| Complaint intake, residual quality judgment | Claude structured outputs | [`apps/court/src/judge.ts`](apps/court/src/judge.ts) |
+| Inference providers | Claude Haiku, Sonnet and Opus | [`examples/inference-providers/server.ts`](examples/inference-providers/server.ts) |
+| Card chargebacks: challenge, accept, escalate | Airwallex payment disputes and files | [`apps/court/card/`](apps/court/card/) |
+| Earnings settlement, FX, supplier payout | Airwallex deposits, conversions, beneficiaries, SWIFT | [`examples/dataco/treasury/`](examples/dataco/treasury/) |
+| Routing by court reputation | `GET /reputation` | [`packages/buyer/src/router.ts`](packages/buyer/src/router.ts) |
 
 ---
 
@@ -252,22 +252,22 @@ npm test        # 251 tests
 **Live.** You need Node 26 or later (TypeScript runs natively, with no build step), a Metal testnet RPC endpoint, an Airwallex sandbox account in a payments-supported country, and an Anthropic API key. Keys and credentials are **never** stored in this repo; point the services at files and environment variables you keep elsewhere.
 
 ```bash
-npm run compile   # contracts → contracts/build
+npm run compile   # packages/contracts/contracts → packages/contracts/contracts/build
 ```
 
 1. **Sellers.**
    - Start DataCo:
      ```bash
-     SELLER_PAY_TO=0x... METAL_RPC_URL=... PORT=4031 node seller/server.ts
+     SELLER_PAY_TO=0x... METAL_RPC_URL=... PORT=4031 node examples/dataco/server.ts
      ```
-   - Start the three inference providers. The launch lines are in the header of [`providers/server.ts`](providers/server.ts), on ports 4061–4063.
+   - Start the three inference providers. The launch lines are in the header of [`examples/inference-providers/server.ts`](examples/inference-providers/server.ts), on ports 4061–4063.
 2. **Court.**
    ```bash
    METAL_RPC_URL=... COURT_KEY_FILE=/path/court.key.json \
    COURT_VAULT=0xe0e90b1bc4792aa26cb83c7f2e82c3a19b7e46d8 \
    COURT_LEDGER=0x2528db9267bd6bc9950ab74ad83d748b64e18042 COURT_LEDGER_FROM_BLOCK=8345602 \
    COURT_SELLERS=sellers.json OPERATOR_TOKEN=... ANTHROPIC_API_KEY=... COURT_PORT=4022 \
-   node court/main.ts
+   node apps/court/src/main.ts
    ```
    `sellers.json` lists every seller the court serves:
    ```json
@@ -279,18 +279,18 @@ npm run compile   # contracts → contracts/build
    ```bash
    PROVIDER_URLS=http://127.0.0.1:4061,http://127.0.0.1:4062,http://127.0.0.1:4063 \
    PROVIDER_KEY_FILES=/path/swift.key.json,/path/sterling.key.json,/path/summit.key.json \
-   CUSTOMER_CRED=/path/sourcing-buyer.json STEP_MAX_PRICE=0.06 node scripts/sourcing-demo.ts
+   CUSTOMER_CRED=/path/sourcing-buyer.json STEP_MAX_PRICE=0.06 node examples/demos/sourcing-demo.ts
    ```
 4. **Case 2: the hard case.**
    ```bash
    SELLER_FAULTS=stale:TSLA,wrong:MSFT  # on the seller
-   DEMO_APPROVE=yes node scripts/demo.ts
+   DEMO_APPROVE=yes node examples/demos/demo.ts
    ```
 5. **Kit 11 and the card rail.**
    ```bash
-   UPSTREAM_PAY_TO=0x... OPERATOR_TOKEN=... PORT=4051 node agents/upstream.ts
-   APPROVE=yes node scripts/kit11-demo.ts
-   AWX_CLIENT_ID=... AWX_API_KEY=... node scripts/card-demo.ts
+   UPSTREAM_PAY_TO=0x... OPERATOR_TOKEN=... PORT=4051 node examples/dataco/upstream.ts
+   APPROVE=yes node examples/demos/kit11-demo.ts
+   AWX_CLIENT_ID=... AWX_API_KEY=... node examples/demos/card-demo.ts
    ```
 
 Each script's full environment variable list is in its header. Each prints numbered steps and writes every tx hash to `data/`.
@@ -304,19 +304,20 @@ Each script's full environment variable list is in its header. Each prints numbe
 
 ## Repository
 
-| Path | What |
-|---|---|
-| `court/` | Evidence, checks, Claude clerk and judge, verdicts, case runner, remedy, seller registry, HTTP API, store |
-| `agents/` | Sourcing router and recourse loop, mandate planner, `metal-agent` CLI wrapper, upstream supplier |
-| `providers/` | Claude-backed x402 inference sellers with operator controls for price, latency and faults |
-| `seller/` | DataCo quote API: per-request signed offers, receipts, Merkle anchoring |
-| `shared/` | Types, the `infer-v1` delivery standard, Merkle tree (MetalAssertions-compatible hashing) |
-| `contracts/` | `CourtLedger.sol`, `CourtVault.sol` (+ `build/`) |
-| `card/` | Airwallex client, Kit 4 decision logic, evidence PDF builder |
-| `treasury/` | Deposits by tx-hash reference, FX, beneficiaries, SWIFT |
-| `console/` | Operator console (plain HTML/CSS/JS, strict CSP) |
-| `scripts/` | `sourcing-demo.ts`, `demo.ts`, `kit11-demo.ts`, `card-demo.ts`, anchoring, live smoke tests |
-| `tasks/` | The specs each module was built from |
+The product (`packages/`, `apps/`) is separate from the examples and demos (`examples/`). Each workspace has its own `package.json`; imports between workspaces use the package name, and each workspace's tests live in its `test/`.
+
+| Package | What it is | Product or example |
+|---|---|---|
+| `@dispute-court/protocol` | Types, delivery standards, Merkle tree, chain helpers | product |
+| `@dispute-court/seller` | Signed offers, receipts, Merkle anchoring, generic paid-route middleware | product |
+| `@dispute-court/buyer` | Reputation-aware router, delivery check and auto-dispute loop, `metal-agent` CLI wrapper | product |
+| `@dispute-court/contracts` | `CourtLedger.sol`, `CourtVault.sol` and the compile script | product |
+| `@dispute-court/court` | Evidence, checks, Claude clerk and judge, verdicts, case runner, remedy, seller registry, HTTP API, store, operator console, card rail, and the demo reference price feed | product |
+| `@dispute-court/example-dataco` | DataCo quote API, upstream supplier, mandate planner, treasury (Airwallex) | example |
+| `@dispute-court/example-inference-providers` | Claude-backed x402 inference sellers with operator controls | example |
+| `@dispute-court/demos` | `sourcing-demo.ts`, `demo.ts`, `kit11-demo.ts`, `card-demo.ts`, anchoring and live smoke tests | example |
+
+`docs/tasks/` holds the specs each module was built from. `data/` stays at the repository root.
 
 ## Limitations
 
